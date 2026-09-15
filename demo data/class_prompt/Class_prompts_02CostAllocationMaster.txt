@@ -1,0 +1,24 @@
+### CLASS_START
+ClassNumber: 2
+ClassName: CostAllocationMaster
+Purpose: Serve as the master data dictionary for Line of Business (LOB) cost allocation parameters.
+Datasource: CA
+Grain: Master Lookup
+Class-level fields: CostAllocationMethod, LOB, ForPrdFrom, ForPrdTo
+Lookup rules: None
+Formula rules: None
+Components required:
+- CostAllocationValue (MATH pass-through)
+Criteria required:
+- CostAllocationMethod (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Resolution of LOB text mappings and allocation percentages with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: NA
+# ------------------------------------------------------------
+EXPOSES:
+- CostAllocationValue: fetched by Class3 POCostAllocation1
+REVIEW points: None
+### CLASS_END

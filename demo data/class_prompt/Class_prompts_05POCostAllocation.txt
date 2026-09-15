@@ -1,0 +1,33 @@
+### CLASS_START
+ClassNumber: 5
+ClassName: POCostAllocation
+Purpose: Compute final distributed financial values for PO items across designated Lines of Business.
+Datasource: PO_I
+Grain: Per Item Allocated Value
+Class-level fields: DocumentNumber, ItemID, LOB, ForPrdFrom, ForPrdTo
+Lookup rules:
+- LOB = GETGROUPFROMSCHEMA2(POCostAllocation1;LOB;{"DocumentNumber":"DocumentNumber", "CostAllocationMethod":"CostAllocationMethod"})
+Formula rules:
+- CostAllocationParameter = (CostAllocationValue / TCostAllocationValue)
+- AllocatedBaseValue = (BaseValue * CostAllocationParameter)
+- AllocatedDocumentValue = (DocumentValue * CostAllocationParameter)
+Components required:
+- BaseValue (FETCHFROMSCHEMA from PO_ItemCalculation, FetchColumn: BaseValue, Expr: {"DocumentNumber":"DocumentNumber", "ItemID":"ItemID"})
+- DocumentValue (FETCHFROMSCHEMA from PO_ItemCalculation, FetchColumn: DocumentValue, Expr: {"DocumentNumber":"DocumentNumber", "ItemID":"ItemID"})
+- CostAllocationValue (FETCHFROMSCHEMA from POCostAllocation1, FetchColumn: CostAllocationValue, Expr: {"DocumentNumber":"DocumentNumber", "CostAllocationMethod":"CostAllocationMethod"})
+- TCostAllocationValue (FETCHFROMSCHEMA from TCostAllocationValue, FetchColumn: TCostAllocationValue, Expr: {"DocumentNumber":"DocumentNumber", "CostAllocationMethod":"CostAllocationMethod"})
+- CostAllocationParameter (MATH)
+- AllocatedBaseValue (MATH)
+- AllocatedDocumentValue (MATH)
+Criteria required:
+- DocumentNumber (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Final financial allocations per LOB mapped back to PO items with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: Class1 PO_ItemCalculation (fetch), Class3 POCostAllocation1 (group, fetch), Class4 TCostAllocationValue (fetch)
+# ------------------------------------------------------------
+EXPOSES: none
+REVIEW points: None
+### CLASS_END

@@ -1,0 +1,37 @@
+### CLASS_START
+ClassNumber: 1
+ClassName: PO_ItemCalculation
+Purpose: Ingest Purchase Order item data and compute line valuations including base values, taxes, and document totals.
+Datasource: PO_I
+Grain: Per Item
+Class-level fields: DocumentNumber, ItemID, ItemName, CostAllocationMethod, TaxCode, ForPrdFrom, ForPrdTo
+Lookup rules: None
+Formula rules:
+- BaseValue = (Qty * Rate)
+- TaxableBase = BaseValue - Discount + AddlCharge  
+- TaxValue = TaxableBase * (TaxPercentage / 100)
+- DocumentValue = TaxableBase + TaxValue
+Components required:
+- Qty (Source)
+- Rate (Source)
+- Discount (Source)
+- AddlCharge (Source)
+- TaxPercentage (Source)
+- BaseValue (MATH)
+- TaxableBase (MATH)
+- TaxValue (MATH)
+- DocumentValue (MATH)
+Criteria required:
+- DocumentNumber (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Computed PO line amounts in transactional currency with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: NA
+# ------------------------------------------------------------
+EXPOSES:
+- BaseValue: fetched by Class5 POCostAllocation
+- DocumentValue: fetched by Class5 POCostAllocation, summed by Class7 POWF
+REVIEW points: None
+### CLASS_END

@@ -6,63 +6,47 @@ export const sampleClassVersions: Record<string, ClassVersion[]> = {
       id: 'c1-v1',
       classId: 'class-01',
       classNumber: 1,
-      className: 'AD',
+      className: 'PO_ItemCalculation',
       versionNumber: 1,
-      title: 'Class #1 · AD (Account Determination Master)',
-      purpose: 'Account determination master to map GL account codes based on item category and service type.',
-      datasource: 'AD',
-      grain: 'Per accountclass',
-      specification: `DATASOURCE: AD
-SETTLEMENT GRAIN: Per accountclass
+      title: 'Class #1 · PO_ItemCalculation (Ingestion & Line Valuation)',
+      purpose: 'Ingest Purchase Order item data and compute line valuations including base values, taxes, and document totals.',
+      datasource: 'PO_I',
+      grain: 'Per Item',
+      specification: `DATASOURCE: PO_I
+SETTLEMENT GRAIN: Per Item
 
 PURPOSE & BUSINESS LOGIC:
-Account determination master to map GL account codes based on item category and service type.
+Ingest Purchase Order item data and compute line valuations including base values, taxes, and document totals.
 
-COMPONENTS (1):
-- parameter1 [MATH]: parameter1 (Placeholder numeric parameter)
+COMPONENTS (9):
+- Qty [Source]: Qty
+- Rate [Source]: Rate
+- Discount [Source]: Discount
+- AddlCharge [Source]: AddlCharge
+- TaxPercentage [Source]: TaxPercentage
+- BaseValue [MATH]: (Qty * Rate)
+- TaxableBase [MATH]: BaseValue - Discount + AddlCharge
+- TaxValue [MATH]: TaxableBase * (TaxPercentage / 100)
+- DocumentValue [MATH]: TaxableBase + TaxValue
+
+FORMULA RULES:
+- BaseValue = (Qty * Rate)
+- TaxableBase = BaseValue - Discount + AddlCharge
+- TaxValue = TaxableBase * (TaxPercentage / 100)
+- DocumentValue = TaxableBase + TaxValue
 
 CRITERIA & FILTER LOGIC:
-- accountclass EQ *
+- DocumentNumber EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
 
 EXPOSES:
-- none (fields are resolved by downstream classes via GETGROUPFROMSCHEMA2)`,
+- BaseValue: fetched by Class5 POCostAllocation
+- DocumentValue: fetched by Class5 POCostAllocation, summed by Class7 POWF`,
       actor: 'AI Engine',
       timestamp: 'Sep 08, 2026 · 10:15 AM',
       changeType: 'INITIAL_GENERATION',
-      changeSummary: 'Initial schema class generated from BR-001 mapping rules',
-    },
-    {
-      id: 'c1-v2',
-      classId: 'class-01',
-      classNumber: 1,
-      className: 'AD',
-      versionNumber: 2,
-      title: 'Class #1 · AD (Account Determination Master)',
-      purpose: 'Account determination master to map GL account codes based on item category and service type, supporting active GL validation (BR-001, BR-002).',
-      datasource: 'AD',
-      grain: 'Per accountclass',
-      specification: `DATASOURCE: AD
-SETTLEMENT GRAIN: Per accountclass
-
-PURPOSE & BUSINESS LOGIC:
-Account determination master to map GL account codes based on item category and service type, supporting active GL validation (BR-001, BR-002).
-
-COMPONENTS (1):
-- parameter1 [MATH]: parameter1 (Mandatory numeric placeholder for active segment validation)
-
-FORMULA RULES:
-- ComponentExpr = parameter1 for parameter1
-
-CRITERIA & FILTER LOGIC:
-- accountclass EQ *
-- ForPrdFrom, ForPrdTo overlap logic
-
-EXPOSES:
-- none (fields are grouped/resolved by downstream classes via GETGROUPFROMSCHEMA2)`,
-      actor: 'Priya S. (Tax Lead)',
-      timestamp: 'Sep 09, 2026 · 02:45 PM',
-      changeType: 'EDIT',
-      changeSummary: 'Added period overlap filter and mandatory segment validation rules',
+      changeSummary: 'Initial schema class generated from PO line calculation rules',
     },
   ],
   'class-02': [
@@ -70,63 +54,32 @@ EXPOSES:
       id: 'c2-v1',
       classId: 'class-02',
       classNumber: 2,
-      className: 'CA',
+      className: 'CostAllocationMaster',
       versionNumber: 1,
-      title: 'Class #2 · CA (Cost Allocation Master)',
-      purpose: 'Cost allocation master to provide predefined percentage profiles across Lines of Business (LoBs).',
+      title: 'Class #2 · CostAllocationMaster (Master Data Dictionary)',
+      purpose: 'Serve as the master data dictionary for Line of Business (LOB) cost allocation parameters.',
       datasource: 'CA',
-      grain: 'Per costallocationmethod',
+      grain: 'Master Lookup',
       specification: `DATASOURCE: CA
-SETTLEMENT GRAIN: Per costallocationmethod
+SETTLEMENT GRAIN: Master Lookup
 
 PURPOSE & BUSINESS LOGIC:
-Cost allocation master to provide predefined percentage profiles across Lines of Business (LoBs).
+Serve as the master data dictionary for Line of Business (LOB) cost allocation parameters.
 
 COMPONENTS (1):
-- costallocationvalue [MATH]: costallocationvalue (Base allocation weight)
+- CostAllocationValue [MATH]: CostAllocationValue (MATH pass-through)
 
 CRITERIA & FILTER LOGIC:
-- costallocationmethod EQ *
+- CostAllocationMethod EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
 
 EXPOSES:
-- costallocationvalue: fetched by downstream classes`,
+- CostAllocationValue: fetched by Class3 POCostAllocation1`,
       actor: 'AI Engine',
       timestamp: 'Sep 08, 2026 · 10:15 AM',
       changeType: 'INITIAL_GENERATION',
       changeSummary: 'Initial allocation master generation',
-    },
-    {
-      id: 'c2-v2',
-      classId: 'class-02',
-      classNumber: 2,
-      className: 'CA',
-      versionNumber: 2,
-      title: 'Class #2 · CA (Cost Allocation Master)',
-      purpose: 'Cost allocation master to provide predefined percentage profiles across Lines of Business (LoBs) (BR-004).',
-      datasource: 'CA',
-      grain: 'Per costallocationmethod',
-      specification: `DATASOURCE: CA
-SETTLEMENT GRAIN: Per costallocationmethod
-
-PURPOSE & BUSINESS LOGIC:
-Cost allocation master to provide predefined percentage profiles across Lines of Business (LoBs) (BR-004).
-
-COMPONENTS (1):
-- costallocationvalue [MATH]: costallocationvalue (Predefined allocation percentage or weighting value)
-
-FORMULA RULES:
-- ComponentExpr = costallocationvalue for costallocationvalue
-
-CRITERIA & FILTER LOGIC:
-- costallocationmethod EQ *
-- ForPrdFrom, ForPrdTo overlap logic
-
-EXPOSES:
-- costallocationvalue: fetched by Class 7 PrePaidReportCostAllocation1`,
-      actor: 'Logaprasanth (User)',
-      timestamp: 'Sep 09, 2026 · 04:10 PM',
-      changeType: 'EDIT',
-      changeSummary: 'Configured dynamic period overlap and downstream fetch bindings',
     },
   ],
   'class-03': [
@@ -134,62 +87,35 @@ EXPOSES:
       id: 'c3-v1',
       classId: 'class-03',
       classNumber: 3,
-      className: 'AP',
+      className: 'POCostAllocation1',
       versionNumber: 1,
-      title: 'Class #3 · AP (Approval Workflow Master)',
-      purpose: 'Approval workflow master defining routing structure and configurable thresholds.',
-      datasource: 'AP',
-      grain: 'Per activitycode',
-      specification: `DATASOURCE: AP
-SETTLEMENT GRAIN: Per activitycode
+      title: 'Class #3 · POCostAllocation1 (Stage-One Allocation Staging)',
+      purpose: 'Perform stage-one allocation staging by fetching applicable cost allocation parameters per PO line item.',
+      datasource: 'PO_I',
+      grain: 'Per Item Allocation Staging',
+      specification: `DATASOURCE: PO_I
+SETTLEMENT GRAIN: Per Item Allocation Staging
 
 PURPOSE & BUSINESS LOGIC:
-Approval workflow master defining routing structure and configurable thresholds.
+Perform stage-one allocation staging by fetching applicable cost allocation parameters per PO line item.
+
+LOOKUP RULES:
+- LOB = GETGROUPFROMSCHEMA2(CostAllocationMaster;LOB;{"CostAllocationMethod":"CostAllocationMethod", "ForPrdFrom":{"equality":"LE","value":"ForPrdTo"}, "ForPrdTo":{"equality":"GE","value":"ForPrdFrom"}})
 
 COMPONENTS (1):
-- timeinmins [MATH]: timeinmins (Threshold timeout in minutes)
+- CostAllocationValue [FETCHFROMSCHEMA]: from CostAllocationMaster
 
 CRITERIA & FILTER LOGIC:
-- activitycode EQ *`,
+- DocumentNumber EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+
+EXPOSES:
+- CostAllocationValue: summed by Class4 TCostAllocationValue, fetched by Class5 POCostAllocation`,
       actor: 'AI Engine',
       timestamp: 'Sep 08, 2026 · 10:15 AM',
       changeType: 'INITIAL_GENERATION',
-      changeSummary: 'Initial approval workflow master generated',
-    },
-    {
-      id: 'c3-v2',
-      classId: 'class-03',
-      classNumber: 3,
-      className: 'AP',
-      versionNumber: 2,
-      title: 'Class #3 · AP (Approval Workflow Master)',
-      purpose: 'Approval workflow master defining routing structure and configurable thresholds (BR-006).',
-      datasource: 'AP',
-      grain: 'Per activitycode',
-      specification: `DATASOURCE: AP
-SETTLEMENT GRAIN: Per activitycode
-
-PURPOSE & BUSINESS LOGIC:
-Approval workflow master defining routing structure and configurable thresholds (BR-006).
-
-COMPONENTS (2):
-- timeinmins [MATH]: timeinmins (Threshold timeout in minutes)
-- timeindays [MATH]: timeindays (Threshold timeout in days)
-
-FORMULA RULES:
-- ComponentExpr = timeinmins for timeinmins
-- ComponentExpr = timeindays for timeindays
-
-CRITERIA & FILTER LOGIC:
-- activitycode EQ *
-- ForPrdFrom, ForPrdTo overlap logic
-
-EXPOSES:
-- none (fields are grouped/resolved by downstream classes, not fetched)`,
-      actor: 'Logaprasanth (User)',
-      timestamp: 'Sep 10, 2026 · 11:30 AM',
-      changeType: 'EDIT',
-      changeSummary: 'Added multi-day timeout parameters and period boundaries',
+      changeSummary: 'Initial stage-one cost allocation mapping model',
     },
   ],
   'class-04': [
@@ -197,27 +123,32 @@ EXPOSES:
       id: 'c4-v1',
       classId: 'class-04',
       classNumber: 4,
-      className: 'PWBill',
+      className: 'TCostAllocationValue',
       versionNumber: 1,
-      title: 'Class #4 · PWBill (Historical Bill Data)',
-      purpose: 'Historical bill data to act as active period budgets for variance evaluation and overruns (BR-005).',
-      datasource: 'PWBill',
-      grain: 'Per documentnumber Monthly',
-      specification: `DATASOURCE: PWBill
-SETTLEMENT GRAIN: Per documentnumber Monthly
+      title: 'Class #4 · TCostAllocationValue (Allocation Denominator Summation)',
+      purpose: 'Sum the total cost allocation parameters per document and allocation method to establish the allocation denominator.',
+      datasource: 'PO_I',
+      grain: 'Total per Cost Allocation Method',
+      specification: `DATASOURCE: PO_I
+SETTLEMENT GRAIN: Total per Cost Allocation Method
 
 PURPOSE & BUSINESS LOGIC:
-Historical bill data to act as active period budgets for variance evaluation and overruns (BR-005).
+Sum the total cost allocation parameters per document and allocation method to establish the allocation denominator.
 
 COMPONENTS (1):
-- invoicetotal [MATH]: invoicetotal (Historical invoice total for budget proration)
+- TCostAllocationValue [SUMFROMSCHEMA]: from POCostAllocation1
 
 CRITERIA & FILTER LOGIC:
-- documentnumber EQ *`,
+- DocumentNumber EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+
+EXPOSES:
+- TCostAllocationValue: fetched by Class5 POCostAllocation`,
       actor: 'AI Engine',
       timestamp: 'Sep 08, 2026 · 10:15 AM',
       changeType: 'INITIAL_GENERATION',
-      changeSummary: 'Initial historical budget extract class',
+      changeSummary: 'Initial allocation denominator aggregator',
     },
   ],
   'class-05': [
@@ -225,63 +156,126 @@ CRITERIA & FILTER LOGIC:
       id: 'c5-v1',
       classId: 'class-05',
       classNumber: 5,
-      className: 'PrePaidReportLineItem',
+      className: 'POCostAllocation',
       versionNumber: 1,
-      title: 'Class #5 · PrePaidReportLineItem (Ingestion & Normalization)',
-      purpose: 'Primary staging class reading raw invoice extract files and mapping items to master classifications.',
-      datasource: 'PrePaidReport',
-      grain: 'Per itemid Monthly',
-      specification: `DATASOURCE: PrePaidReport
-SETTLEMENT GRAIN: Per itemid Monthly
+      title: 'Class #5 · POCostAllocation (Final Distributed Allocations)',
+      purpose: 'Compute final distributed financial values for PO items across designated Lines of Business.',
+      datasource: 'PO_I',
+      grain: 'Per Item Allocated Value',
+      specification: `DATASOURCE: PO_I
+SETTLEMENT GRAIN: Per Item Allocated Value
 
 PURPOSE & BUSINESS LOGIC:
-Primary staging class reading raw invoice extract files and mapping items to master classifications.
+Compute final distributed financial values for PO items across designated Lines of Business.
 
-COMPONENTS (1):
-- invoiceamount [MATH]: invoiceamount (Raw item invoice amount)
+LOOKUP RULES:
+- LOB = GETGROUPFROMSCHEMA2(POCostAllocation1;LOB;{"DocumentNumber":"DocumentNumber", "CostAllocationMethod":"CostAllocationMethod"})
+
+FORMULA RULES:
+- CostAllocationParameter = (CostAllocationValue / TCostAllocationValue)
+- AllocatedBaseValue = (BaseValue * CostAllocationParameter)
+- AllocatedDocumentValue = (DocumentValue * CostAllocationParameter)
+
+COMPONENTS (7):
+- BaseValue [FETCHFROMSCHEMA]: from PO_ItemCalculation
+- DocumentValue [FETCHFROMSCHEMA]: from PO_ItemCalculation
+- CostAllocationValue [FETCHFROMSCHEMA]: from POCostAllocation1
+- TCostAllocationValue [FETCHFROMSCHEMA]: from TCostAllocationValue
+- CostAllocationParameter [MATH]: (CostAllocationValue / TCostAllocationValue)
+- AllocatedBaseValue [MATH]: (BaseValue * CostAllocationParameter)
+- AllocatedDocumentValue [MATH]: (DocumentValue * CostAllocationParameter)
 
 CRITERIA & FILTER LOGIC:
-- transactionstatus EQ 'APPROVED'`,
+- DocumentNumber EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+
+EXPOSES:
+- none`,
       actor: 'AI Engine',
       timestamp: 'Sep 08, 2026 · 10:15 AM',
       changeType: 'INITIAL_GENERATION',
-      changeSummary: 'Initial extract ingestion model',
+      changeSummary: 'Initial proportional financial distribution class',
     },
+  ],
+  'class-06': [
     {
-      id: 'c5-v2',
-      classId: 'class-05',
-      classNumber: 5,
-      className: 'PrePaidReportLineItem',
-      versionNumber: 2,
-      title: 'Class #5 · PrePaidReportLineItem (Ingestion & Normalization)',
-      purpose: 'Primary staging class reading raw invoice extract files, validating period ranges, and mapping items to master classifications (BR-001, BR-003).',
-      datasource: 'PrePaidReport',
-      grain: 'Per itemid Monthly',
-      specification: `DATASOURCE: PrePaidReport
-SETTLEMENT GRAIN: Per itemid Monthly
+      id: 'c6-v1',
+      classId: 'class-06',
+      classNumber: 6,
+      className: 'AP',
+      versionNumber: 1,
+      title: 'Class #6 · AP (Workflow SLA & Routing Rules)',
+      purpose: 'Host workflow routing rules and SLA configurations per Line of Business.',
+      datasource: 'AP',
+      grain: 'Master Lookup',
+      specification: `DATASOURCE: AP
+SETTLEMENT GRAIN: Master Lookup
 
 PURPOSE & BUSINESS LOGIC:
-Primary staging class reading raw invoice extract files, validating period ranges, and mapping items to master classifications (BR-001, BR-003).
+Host workflow routing rules and SLA configurations per Line of Business.
 
 COMPONENTS (2):
-- invoiceamount [MATH]: invoiceamount (Raw item invoice amount)
-- taxrate [MATH]: taxrate (Tax percentage extracted from line item)
-
-FORMULA RULES:
-- ComponentExpr = invoiceamount for invoiceamount
-- ComponentExpr = taxrate for taxrate
+- TimeInMins [MATH]: TimeInMins (MATH pass-through)
+- TimeInDays [MATH]: TimeInDays (MATH pass-through)
 
 CRITERIA & FILTER LOGIC:
-- transactionstatus EQ 'APPROVED'
-- amount GT 0.00
-- ForPrdFrom, ForPrdTo range validity
+- LOB EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
 
-GATING CONDITIONS:
-- itemid NE ''`,
-      actor: 'Priya S. (Tax Lead)',
-      timestamp: 'Sep 09, 2026 · 05:20 PM',
-      changeType: 'EDIT',
-      changeSummary: 'Added tax rate components and positive balance validation rules',
+EXPOSES:
+- TimeInMins: fetched by Class7 POWF
+- TimeInDays: fetched by Class7 POWF`,
+      actor: 'AI Engine',
+      timestamp: 'Sep 08, 2026 · 10:15 AM',
+      changeType: 'INITIAL_GENERATION',
+      changeSummary: 'Initial workflow SLA & routing configuration master',
+    },
+  ],
+  'class-07': [
+    {
+      id: 'c7-v1',
+      classId: 'class-07',
+      classNumber: 7,
+      className: 'POWF',
+      versionNumber: 1,
+      title: 'Class #7 · POWF (Multi-Tier Workflow Approvals)',
+      purpose: 'Trigger required multi-tier workflow approvals based on document total value and LOB designation before accounting release.',
+      datasource: 'PO_I',
+      grain: 'Workflow Event',
+      specification: `DATASOURCE: PO_I
+SETTLEMENT GRAIN: Workflow Event
+
+PURPOSE & BUSINESS LOGIC:
+Trigger required multi-tier workflow approvals based on document total value and LOB designation before accounting release.
+
+LOOKUP RULES:
+- LOB = GETGROUPFROMSCHEMA2(POCostAllocation1;LOB;{"DocumentNumber":"DocumentNumber"})
+- ActivityCode = GETGROUPFROMSCHEMA2(AP;ActivityCode;{"LOB":"LOB"})
+- ActivityName = GETGROUPFROMSCHEMA2(AP;ActivityName;{"LOB":"LOB"})
+- UserID = GETGROUPFROMSCHEMA2(AP;UserID;{"LOB":"LOB"})
+
+FORMULA RULES:
+- WorkflowTrigger = 1
+
+COMPONENTS (4):
+- DocumentValue [SUMFROMSCHEMA]: from PO_ItemCalculation
+- TimeInMins [FETCHFROMSCHEMA]: from AP
+- TimeInDays [FETCHFROMSCHEMA]: from AP
+- WorkflowTrigger [MATH]: 1
+
+CRITERIA & FILTER LOGIC:
+- DocumentNumber EQ *
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+
+EXPOSES:
+- none`,
+      actor: 'AI Engine',
+      timestamp: 'Sep 08, 2026 · 10:15 AM',
+      changeType: 'INITIAL_GENERATION',
+      changeSummary: 'Initial multi-tier workflow approval triggers',
     },
   ],
 };

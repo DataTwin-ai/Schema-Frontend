@@ -1,0 +1,24 @@
+### CLASS_START
+ClassNumber: 4
+ClassName: TCostAllocationValue
+Purpose: Sum the total cost allocation parameters per document and allocation method to establish the allocation denominator.
+Datasource: PO_I
+Grain: Total per Cost Allocation Method
+Class-level fields: DocumentNumber, CostAllocationMethod, ForPrdFrom, ForPrdTo
+Lookup rules: None
+Formula rules: None
+Components required:
+- TCostAllocationValue (SUMFROMSCHEMA from POCostAllocation1, FetchColumn: CostAllocationValue, Expr: {"DocumentNumber":"DocumentNumber", "CostAllocationMethod":"CostAllocationMethod"})
+Criteria required:
+- DocumentNumber (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Aggregated ratio denominators per allocation group with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: Class3 POCostAllocation1 (sum)
+# ------------------------------------------------------------
+EXPOSES:
+- TCostAllocationValue: fetched by Class5 POCostAllocation
+REVIEW points: None
+### CLASS_END

@@ -1,0 +1,25 @@
+### CLASS_START
+ClassNumber: 3
+ClassName: POCostAllocation1
+Purpose: Perform stage-one allocation staging by fetching applicable cost allocation parameters per PO line item.
+Datasource: PO_I
+Grain: Per Item Allocation Staging
+Class-level fields: DocumentNumber, CostAllocationMethod, LOB, ForPrdFrom, ForPrdTo
+Lookup rules:
+- LOB = GETGROUPFROMSCHEMA2(CostAllocationMaster;LOB;{"CostAllocationMethod":"CostAllocationMethod", "ForPrdFrom":{"equality":"LE","value":"ForPrdTo"}, "ForPrdTo":{"equality":"GE","value":"ForPrdFrom"}})
+Formula rules: None
+Components required:
+- CostAllocationValue (FETCHFROMSCHEMA from CostAllocationMaster, FetchColumn: CostAllocationValue, Expr: {"CostAllocationMethod":"CostAllocationMethod", "ForPrdFrom":{"equality":"LE","value":"ForPrdTo"}, "ForPrdTo":{"equality":"GE","value":"ForPrdFrom"}})
+Criteria required:
+- DocumentNumber (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Staged proportional allocation values per item with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: Class2 CostAllocationMaster (group, fetch)
+# ------------------------------------------------------------
+EXPOSES:
+- CostAllocationValue: summed by Class4 TCostAllocationValue, fetched by Class5 POCostAllocation
+REVIEW points: None
+### CLASS_END

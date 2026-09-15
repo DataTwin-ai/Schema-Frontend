@@ -1,0 +1,26 @@
+### CLASS_START
+ClassNumber: 6
+ClassName: AP
+Purpose: Host workflow routing rules and SLA configurations per Line of Business.
+Datasource: AP
+Grain: Master Lookup
+Class-level fields: LOB, ActivityCode, ActivityName, UserID, ForPrdFrom, ForPrdTo
+Lookup rules: None
+Formula rules: None
+Components required:
+- TimeInMins (MATH pass-through)
+- TimeInDays (MATH pass-through)
+Criteria required:
+- LOB (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Master workflow configuration metrics with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: NA
+# ------------------------------------------------------------
+EXPOSES:
+- TimeInMins: fetched by Class7 POWF
+- TimeInDays: fetched by Class7 POWF
+REVIEW points: None
+### CLASS_END

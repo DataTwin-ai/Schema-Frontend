@@ -43,7 +43,7 @@ export class MockAssistantService implements IAssistantService {
       if (lower.includes('technical') || lower.includes('tr')) {
         return {
           message:
-            'The **Technical Requirements (TR-001 to TR-008)** specify 6-decimal math precision, SQL/NoSQL dynamic lookup engines, state machine workflows for adjustment entries, and hard-gating interceptors on the GL posting API.',
+            'The **Technical Requirements (TR-001 to TR-004)** specify RESTful ERP integration APIs, ACID transactional concurrency controls, low-latency database indexing for FIFO matching, and a stateless business rules engine.',
           suggestedActions: [
             { label: 'Add Custom Technical Rule', actionType: 'refine-requirement' },
           ],
@@ -51,7 +51,7 @@ export class MockAssistantService implements IAssistantService {
       }
       return {
         message:
-          `You have **${context.requirements?.problemStatements.length || 5} Problem Statements**, **${context.requirements?.businessObjectives.length || 5} Objectives**, and **${context.requirements?.technicalRequirements.length || 8} Technical Requirements**. You can edit any card directly or click **"+ Add Information"** before proceeding to Class Generation.`,
+          `You have **${context.requirements?.problemStatements.length || 6} Problem Statements**, **${context.requirements?.businessObjectives.length || 4} Objectives**, and **${context.requirements?.technicalRequirements.length || 4} Technical Requirements**. You can edit any card directly or click **"+ Add Information"** before proceeding to Class Generation.`,
         suggestedActions: [
           { label: 'Generate SCDP Classes', actionType: 'jump-to-stage', payload: 'classes' },
           { label: 'Add Accounting Rule Note', actionType: 'refine-requirement' },
@@ -60,19 +60,19 @@ export class MockAssistantService implements IAssistantService {
     }
 
     if (context.stage === 'classes') {
-      if (lower.includes('class 9') || lower.includes('overrun') || lower.includes('budget')) {
+      if (lower.includes('class 5') || lower.includes('allocation') || lower.includes('cost')) {
         return {
           message:
-            '**Class 9 (`PrePaidReportCostAllocation`)** performs the mathematical split across Lines of Business and evaluates `(AllocatedAmount > BudgetedAmount)`. If true, `BudgetOverrunInd` triggers a condition exception, preventing invalid ledger postings.',
+            '**Class 5 (`POCostAllocation`)** computes final distributed financial values for PO items across designated Lines of Business using `(CostAllocationValue / TCostAllocationValue)` and maps them back to transactional line items.',
           suggestedActions: [
-            { label: 'Inspect Class 9 Components', actionType: 'highlight-class', payload: 'class-09' },
+            { label: 'Inspect Class 5 Components', actionType: 'highlight-class', payload: 'class-05' },
           ],
         };
       }
       if (lower.includes('dependency') || lower.includes('relationship')) {
         return {
           message:
-            'The class dependencies cascade as follows:\n- **Class 5 (`PrePaidReport_I`)** → **Class 6 (`PrePaidReport_ItemCalculation`)**\n- **Class 6 & Class 2 (`CA`)** → **Class 7 (`PrePaidReportCostAllocation1`)**\n- **Class 7** → **Class 8 (`TCostAllocationValue`)** & **Class 9 (`PrePaidReportCostAllocation`)**\n- **Class 9 & Class 1 (`AD`)** → **Class 10 (`AdjustmentAc`)** → **Class 11 (`PrePaidReportWF`)**.',
+            'The class dependencies cascade as follows:\n- **Class 2 (`CostAllocationMaster`)** → **Class 3 (`POCostAllocation1`)**\n- **Class 3** → **Class 4 (`TCostAllocationValue`)** & **Class 5 (`POCostAllocation`)**\n- **Class 1 (`PO_ItemCalculation`)** → **Class 5 (`POCostAllocation`)** & **Class 7 (`POWF`)**\n- **Class 3 & Class 6 (`AP`)** → **Class 7 (`POWF`)**.',
           suggestedActions: [
             { label: 'Generate Full Schema', actionType: 'jump-to-stage', payload: 'schema' },
           ],
@@ -80,7 +80,7 @@ export class MockAssistantService implements IAssistantService {
       }
       return {
         message:
-          `Currently inspecting **${context.classes?.length || 11} generated classes**. Each class encapsulates datasources, grain, math components, and lookup criteria. You can edit any class properties or click **"Generate Schema"**.`,
+          `Currently inspecting **${context.classes?.length || 7} generated classes**. Each class encapsulates datasources, grain, math components, and lookup criteria. You can edit any class properties or click **"Generate Schema"**.`,
         suggestedActions: [
           { label: 'Generate SCDP Schema', actionType: 'jump-to-stage', payload: 'schema' },
         ],

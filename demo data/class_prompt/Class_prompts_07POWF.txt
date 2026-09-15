@@ -1,0 +1,31 @@
+### CLASS_START
+ClassNumber: 7
+ClassName: POWF
+Purpose: Trigger required multi-tier workflow approvals based on document total value and LOB designation before accounting release.
+Datasource: PO_I
+Grain: Workflow Event
+Class-level fields: DocumentNumber, LOB, ActivityCode, ActivityName, UserID, ForPrdFrom, ForPrdTo
+Lookup rules:
+- LOB = GETGROUPFROMSCHEMA2(POCostAllocation1;LOB;{"DocumentNumber":"DocumentNumber"})
+- ActivityCode = GETGROUPFROMSCHEMA2(AP;ActivityCode;{"LOB":"LOB"})
+- ActivityName = GETGROUPFROMSCHEMA2(AP;ActivityName;{"LOB":"LOB"})
+- UserID = GETGROUPFROMSCHEMA2(AP;UserID;{"LOB":"LOB"})
+Formula rules:
+- WorkflowTrigger = 1
+Components required:
+- DocumentValue (SUMFROMSCHEMA from PO_ItemCalculation, FetchColumn: DocumentValue, Expr: {"DocumentNumber":"DocumentNumber"})
+- TimeInMins (FETCHFROMSCHEMA from AP, FetchColumn: TimeInMins, Expr: {"LOB":"LOB", "ForPrdFrom":{"equality":"LE","value":"ForPrdTo"}, "ForPrdTo":{"equality":"GE","value":"ForPrdFrom"}})
+- TimeInDays (FETCHFROMSCHEMA from AP, FetchColumn: TimeInDays, Expr: {"LOB":"LOB", "ForPrdFrom":{"equality":"LE","value":"ForPrdTo"}, "ForPrdTo":{"equality":"GE","value":"ForPrdFrom"}})
+- WorkflowTrigger (MATH)
+Criteria required:
+- DocumentNumber (EQ *)
+- ForPrdFrom (2022-01-01)
+- ForPrdTo ("")
+Conditions required: None
+Expected output: Workflow routing triggers and SLA boundaries mapped to the PO with completion code TT.
+# --- DEPENDENCY --------------------------------------------
+Dependency: Class1 PO_ItemCalculation (sum), Class3 POCostAllocation1 (group), Class6 AP (group, fetch)
+# ------------------------------------------------------------
+EXPOSES: none
+REVIEW points: None
+### CLASS_END

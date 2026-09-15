@@ -1,143 +1,63 @@
 import { RequirementsModel } from '../types';
 
 export const sampleRequirements: RequirementsModel = {
-  domain: 'Accounts Payable and Expense Allocation',
+  domain: 'Accounts Payable (AP)',
   highLevelRequirement:
-    'The business needs a system to process prepaid bill extracts by mapping item and service expenses to specific general ledger accounts. It must dynamically allocate costs across multiple Lines of Business using predetermined percentages. Finally, the system must account for applicable tax rates and support post-allocation adjustment journaling.',
+    'The system should calculate supplier advance payments, track the advance balance, apply eligible advances against supplier invoices, and determine the adjusted invoice payable amount and remaining advance balance.',
   generatedAt: new Date().toISOString(),
   problemStatements: [
     {
       id: 'ps-1',
       code: 'PS-001',
-      title: 'Manual GL Mapping Errors',
-      category: 'Decision',
+      title: 'Supplier Advance Calculation & Milestone Alignment',
+      category: 'Calculation',
       description:
-        'Manual and error-prone mapping of prepaid bill items and service expenses to specific general ledger accounts.',
+        'Determining the correct supplier advance payment amount in accordance with contract milestones or purchase order terms to avoid overpayment.',
       isAiGenerated: true,
     },
     {
       id: 'ps-2',
       code: 'PS-002',
-      title: 'Inflexible Multi-LOB Distribution',
-      category: 'Allocation',
+      title: 'Real-Time Advance Balance Tracking',
+      category: 'Workflow',
       description:
-        'Inability to dynamically and accurately distribute prepaid costs across multiple Lines of Business using predetermined allocation percentages.',
+        'Maintaining an accurate, real-time record of remaining advance balances per supplier to prevent loss of financial visibility on prepaid assets.',
       isAiGenerated: true,
     },
     {
       id: 'ps-3',
       code: 'PS-003',
-      title: 'Inaccurate Cross-Entity Tax Application & Multi-Jurisdiction Proration',
-      category: 'Calculation',
-      description: `1.0 BUSINESS CONTEXT & TAX APPORTIONMENT PROBLEM
-Inaccurate calculation and application of tax rates on dynamically allocated expenses across different legal entities and operating jurisdictions. When prepaid expenses originate in one corporate headquarters entity but are apportioned across multiple operating subsidiaries, localized tax treatment must be deterministically resolved.
-
-2.0 JURISDICTIONAL NEXUS & TAX RESOLUTION RULES
-2.1 Destination Tax Nexus Resolution:
-    - For each allocated line item, the engine shall determine the destination entity tax profile using the delivery address and corporate tax registration ID.
-    - If the destination entity resides in a distinct tax jurisdiction from the purchasing entity, inter-company cross-border tax schedules must apply.
-2.2 Tiered Rate Calculation:
-    - State and provincial sales taxes must be computed separately from municipal or local transit surcharges.
-    - Tax exemptions must be verified against the destination business unit exemption registry (TaxExemptionCertInd).
-
-3.0 ALLOCATION & EXCLUSION RULES
-3.1 Non-Taxable Item Proration:
-    - Pure service items exempt from state sales tax shall not accrue destination tax liabilities.
-    - Mixed hardware/service bundles must unpack SKU components to apply composite tax rates accurately.
-3.2 Cross-Currency Conversion:
-    - All tax amounts must be computed in the local transaction currency and converted to functional reporting currency using daily spot exchange rates.
-
-4.0 AUDIT LINEAGE & COMPLIANCE
-4.1 The system shall maintain an immutable audit record linking each tax calculation back to the master tax authority rate table version.
-4.2 Tax liability variances exceeding 0.001 in functional currency must trigger an automated compliance review flag.`,
+      title: 'Invoice Advance Matching & Allocation',
+      category: 'Allocation',
+      description:
+        'Matching and allocating eligible outstanding advances against incoming supplier invoices based on predefined business rules.',
       isAiGenerated: true,
     },
     {
       id: 'ps-4',
       code: 'PS-004',
-      title: 'Lack of Adjustment Approval Workflow',
-      category: 'Workflow',
+      title: 'Allocation Cap & Balance Validation',
+      category: 'Validation',
       description:
-        'Lack of structured workflow to execute, track, and approve post-allocation adjustment journal entries.',
+        'Ensuring the applied advance payment does not exceed the total invoice amount or the remaining eligible advance balance.',
       isAiGenerated: true,
     },
     {
       id: 'ps-5',
       code: 'PS-005',
-      title: 'Multi-Lateral Reconciliation & Zero-Variance Ledger Interception Specification',
-      category: 'Validation',
-      description: `1.0 PURPOSE & FINANCIAL CONTROL MANDATE
-The system shall enforce strict mathematical reconciliation across all prepaid expense allocations, post-allocation adjustments, tax calculations, and sub-ledger postings. Any variance between the original source invoice total and the sum of all downstream line-item entries must be intercepted and prevented from posting to the General Ledger.
-
-2.0 INGESTION & PRE-VALIDATION CRITERIA
-2.1 Source Invoice Ingestion:
-    - Ingest invoice header and line-item details from enterprise AP feeds (CSV, JSON, XML, EDI 810).
-    - Validate that invoice header total exactly matches the sum of line-item base values plus stated invoice taxes.
-    - If the source extract exhibits pre-existing internal inconsistency, reject the file immediately with error code ERR-INGEST-INCONSISTENT-TOTALS.
-2.2 Data Quality & Currency Checks:
-    - Ensure currency ISO codes conform to standard ISO 4217.
-    - Ensure all fiscal period identifiers match open accounting periods in the Master Calendar table.
-
-3.0 DYNAMIC ALLOCATION SPECIFICATIONS
-3.1 Apportionment Methodology:
-    - Lookup the allocation profile associated with the invoice commodity code and requesting department.
-    - Retrieve active allocation weight configuration for the target Lines of Business (LOB).
-    - Allocation weights must strictly sum to 100.000000% (1.000000) across all designated recipient entities.
-3.2 Fractional Cent & Remainder Distribution:
-    - All intermediate arithmetic operations shall maintain 6 decimal places of precision.
-    - When round-off to 2 decimal places creates a fractional cent discrepancy (+/- 0.01), the engine shall assign the rounding delta to the primary LOB having the largest percentage weight.
-    - The rounding delta assignment must be explicitly documented in the calculation lineage trace (RoundingAdjustmentAmt).
-
-4.0 POST-ALLOCATION ADJUSTMENT WORKFLOW
-4.1 Adjustment Capture:
-    - Business unit controllers may submit re-allocation adjustments prior to ledger posting closing dates.
-    - Adjustments may shift balances between LOBs or amend general ledger account classifications.
-4.2 Multi-Lateral Balancing Rule:
-    - Every adjustment entry must be net-zero across all modified lines (SUM(AdjustmentAmt) = 0.00).
-    - Adjustments that alter the aggregate invoice total are strictly prohibited.
-4.3 Hierarchical Approval Matrix:
-    - Adjustments under ₹50,000 / $1,000 require Single Controller sign-off.
-    - Adjustments between ₹50,000 and ₹500,000 require VP Finance authorization.
-    - Adjustments exceeding ₹500,000 require CFO or Corporate Controller dual approval.
-
-5.0 MULTI-LATERAL RECONCILIATION ENGINE
-5.1 Mathematical Invariant Formulas:
-    - Invariant 1: SourceTotal == SUM(LineItemBaseAllocated) + SUM(LineItemTaxes)
-    - Invariant 2: NetAdjustmentTotal == 0.0000
-    - Invariant 3: FinalPostableTotal == SourceTotal + NetAdjustmentTotal
-    - Invariant 4: GLDebitEntriesTotal == GLCreditEntriesTotal
-5.2 Tolerance Gating:
-    - The reconciliation threshold is configured at exactly 0.0000 currency units.
-    - No soft-variance thresholds are permitted under standard enterprise financial policy.
-
-6.0 HARD-GATING INTERCEPTOR & ERROR HANDLING
-6.1 Interception Rules:
-    - If Invariant 1, 2, 3, or 4 evaluates to false, the ledger posting orchestration agent must immediately block the transaction.
-    - Set transaction status to 'EXCEPTION_RECONCILIATION_FAILED'.
-    - Generate an immutable audit exception record with detailed delta breakdown.
-6.2 Notification & SLA:
-    - Dispatch automated alert notification to the Financial Operations Queue.
-    - Escalate to Tier-2 Financial Systems Engineering if unresolved within 4 business hours.
-
-7.0 AUDIT LINEAGE & COMPLIANCE ARCHIVE
-7.1 Cryptographic Hash Sealing:
-    - Generate a SHA-256 digital signature over the complete payload:
-      SHA256(SourceInvoicePayload + AllocationMatrix + AdjustmentsArray + FinalJournalLines)
-    - Store the digital signature in the SCDP Compliance Ledger.
-7.2 Data Retention:
-    - Maintain transaction execution history for a minimum of 7 fiscal years in immutable storage.
-    - Support instantaneous retrieval for internal audit, external financial examination, and tax authority audits.
-
-8.0 EXPECTED DOWNSTREAM JOURNAL CONTRACT
-8.1 Output Format:
-    - Schema-compliant SCDP JSON transaction payload ready for SAP / Oracle / Workday General Ledger ingestion.
-    - Balanced double-entry accounting records with complete COA (Chart of Accounts) string.
-8.2 Final Verification Checklist:
-    - [x] Header validation passed
-    - [x] LOB allocation percentage verified
-    - [x] Jurisdiction tax computed
-    - [x] Controller approvals verified
-    - [x] Zero variance confirmed (Variance == 0.00)`,
+      title: 'Net Payable Computation & Pool Update',
+      category: 'Calculation',
+      description:
+        'Calculating the final net payable amount for the invoice after deductions and accurately updating the remaining advance pool.',
+      isAiGenerated: true,
+    },
+    {
+      id: 'ps-6',
+      code: 'PS-006',
+      title: 'Multi-Invoice Settlement Priority',
+      category: 'Decision',
+      description:
+        'Deciding the order of application when multiple pending invoices are eligible to be settled by a single remaining advance balance.',
       isAiGenerated: true,
     },
   ],
@@ -145,46 +65,37 @@ The system shall enforce strict mathematical reconciliation across all prepaid e
     {
       id: 'bo-1',
       code: 'BO-001',
-      title: 'Automate GL Account Determination',
+      title: 'Automated Advance Calculation',
       derivedFromPsCode: 'PS-001',
       description:
-        'Automate the mapping of prepaid bill items and service expenses to designated general ledger accounts to eliminate manual errors.',
+        'Establish automated, precise computation of supplier advance payments aligned with purchase order terms and contract milestones to eliminate manual calculation errors and overpayments.',
       isAiGenerated: true,
     },
     {
       id: 'bo-2',
       code: 'BO-002',
-      title: 'Dynamic Percentage-Based Cost Splitting',
+      title: 'Sub-Ledger Advance Visibility',
       derivedFromPsCode: 'PS-002',
       description:
-        'Enable dynamic, percentage-based distribution of prepaid costs across multiple Lines of Business.',
+        'Maintain a real-time, sub-ledger level visibility of outstanding prepaid assets and remaining advance balances per supplier.',
       isAiGenerated: true,
     },
     {
       id: 'bo-3',
       code: 'BO-003',
-      title: 'Jurisdictional Tax Precision',
-      derivedFromPsCode: 'PS-003',
+      title: 'Standardized Matching & Prioritization',
+      derivedFromPsCode: 'PS-003, PS-006',
       description:
-        'Ensure accurate and automated calculation and application of tax rates on all allocated expenses across business units.',
+        'Standardize and automate the prioritization, matching, and allocation of eligible outstanding advances against incoming supplier invoices based on structured business logic.',
       isAiGenerated: true,
     },
     {
       id: 'bo-4',
       code: 'BO-004',
-      title: 'Auditable Adjustment Workflow',
-      derivedFromPsCode: 'PS-004',
+      title: 'Financial Allocation Controls',
+      derivedFromPsCode: 'PS-004, PS-005',
       description:
-        'Establish a structured, traceable, and auditable workflow for executing, tracking, and approving post-allocation adjustment journal entries.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'bo-5',
-      code: 'BO-005',
-      title: 'Zero-Variance Ledger Hard-Gating',
-      derivedFromPsCode: 'PS-005',
-      description:
-        'Implement automated validation and reconciliation mechanisms to ensure zero-variance between total allocated/adjusted expenses and original prepaid bill extract values prior to ledger posting.',
+        'Enforce strict financial controls to prevent over-allocation of prepayments beyond invoice totals or available balances, ensuring accurate calculation of final net payables.',
       isAiGenerated: true,
     },
   ],
@@ -192,61 +103,71 @@ The system shall enforce strict mathematical reconciliation across all prepaid e
     {
       id: 'br-1',
       code: 'BR-001',
-      title: 'Master Lookup GL Resolution',
+      title: 'Contract Milestone & PO Term Retrieval',
       category: 'Lookup',
       derivedFromBoCode: 'BO-001',
       description:
-        'The system shall retrieve and map prepaid bill items and service expenses to specific general ledger accounts using a configurable master lookup table.',
+        'The system shall retrieve the contract milestone parameters or purchase order terms to calculate the eligible supplier advance payment amount.',
       isAiGenerated: true,
     },
     {
       id: 'br-2',
       code: 'BR-002',
-      title: 'Multi-LOB Weighted Distribution',
-      category: 'Allocation',
+      title: 'Real-Time Advance Balance Ledger',
+      category: 'Workflow',
       derivedFromBoCode: 'BO-002',
       description:
-        'The system shall dynamically calculate and distribute prepaid costs across multiple Lines of Business (LOB) based on preconfigured allocation rules and percentage weights.',
+        'The system shall update and maintain a real-time ledger of outstanding advance balances aggregated by supplier ID and purchase order ID.',
       isAiGenerated: true,
     },
     {
       id: 'br-3',
       code: 'BR-003',
-      title: 'Destination-Profile Tax Calculation',
-      category: 'Calculation',
+      title: 'Automated Invoice Matching Algorithm',
+      category: 'Lookup',
       derivedFromBoCode: 'BO-003',
       description:
-        'The system shall compute and apply the correct tax rate to each dynamically allocated expense item based on the tax profile of the destination business unit.',
+        'The system shall execute a matching algorithm to identify eligible outstanding advances for any newly entered supplier invoice based on matching Supplier ID and Purchase Order ID.',
       isAiGenerated: true,
     },
     {
       id: 'br-4',
       code: 'BR-004',
-      title: 'Adjustment Lifecycle Management',
-      category: 'Workflow',
-      derivedFromBoCode: 'BO-004',
+      title: 'FIFO Advance Allocation Ordering',
+      category: 'Decision',
+      derivedFromBoCode: 'BO-003',
       description:
-        'The system shall provide an end-to-end workflow to create, route, track, and approve post-allocation adjustment journal entries prior to final posting.',
+        'The system shall apply a First-In, First-Out (FIFO) rule to determine the allocation order of remaining advance balances when multiple eligible invoices are pending against a single advance pool.',
       isAiGenerated: true,
     },
     {
       id: 'br-5',
       code: 'BR-005',
-      title: 'Sum-of-Segments Reconciliation',
+      title: 'Allocation Limit & Invoice Cap Validation',
       category: 'Validation',
-      derivedFromBoCode: 'BO-005',
+      derivedFromBoCode: 'BO-004',
       description:
-        'The system shall validate that the sum of all allocated expenses plus any post-allocation adjustments matches the original prepaid bill extract total.',
+        'The system shall validate that the proposed advance payment allocation is less than or equal to the remaining eligible advance balance and does not exceed the gross invoice amount.',
       isAiGenerated: true,
     },
     {
       id: 'br-6',
       code: 'BR-006',
-      title: 'Non-Zero Variance Interception',
-      category: 'Decision',
-      derivedFromBoCode: 'BO-005',
+      title: 'Net Payable Amount Calculation',
+      category: 'Calculation',
+      derivedFromBoCode: 'BO-004',
       description:
-        'The system shall prevent the ledger posting execution if any reconciliation variance exists between the final adjusted total and the original bill extract.',
+        'The system shall calculate the adjusted net payable amount for the invoice by subtracting the allocated advance amount from the gross invoice amount.',
+      isAiGenerated: true,
+    },
+    {
+      id: 'br-7',
+      code: 'BR-007',
+      title: 'Active Advance Pool Balance Decrement',
+      category: 'Allocation',
+      derivedFromBoCode: 'BO-002, BO-004',
+      description:
+        'The system shall deduct the applied invoice allocation amount from the supplier\'s active advance pool balance immediately upon invoice approval.',
       isAiGenerated: true,
     },
   ],
@@ -254,73 +175,64 @@ The system shall enforce strict mathematical reconciliation across all prepaid e
     {
       id: 'fr-1',
       code: 'FR-001',
-      title: 'Source Bill Ingestion & Parse',
+      title: 'Procurement Parameter Ingestion & Advance Calculation',
       derivedFromBrCode: 'BR-001',
       description:
-        'The system shall ingest and parse raw prepaid bill items and service expenses from source data extracts.',
+        'The system must ingest contract milestones and purchase order parameters from the ERP procurement module to automatically calculate the maximum eligible supplier advance payment amount.',
       isAiGenerated: true,
     },
     {
       id: 'fr-2',
       code: 'FR-002',
-      title: 'Dynamic GL Account Mapping',
-      derivedFromBrCode: 'BR-001',
+      title: 'Advance Paid & Remaining Balance Sub-Ledger',
+      derivedFromBrCode: 'BR-002',
       description:
-        'The system shall map prepaid bill items to specific General Ledger (GL) accounts using a dynamically configurable master lookup table.',
+        'The system must maintain a real-time ledger recording the total advance paid, amount applied, and remaining balance for each unique combination of Supplier ID and Purchase Order ID.',
       isAiGenerated: true,
     },
     {
       id: 'fr-3',
       code: 'FR-003',
-      title: 'LOB Percentage Apportionment',
-      derivedFromBrCode: 'BR-002',
+      title: 'Automated Supplier & PO Matching Routine',
+      derivedFromBrCode: 'BR-003',
       description:
-        'The system shall dynamically calculate and allocate prepaid costs across multiple target Lines of Business (LOB) based on configured percentage weights.',
+        'The system must execute an automated matching routine that identifies outstanding advance payments matching the Supplier ID and Purchase Order ID of newly registered supplier invoices.',
       isAiGenerated: true,
     },
     {
       id: 'fr-4',
       code: 'FR-004',
-      title: 'Destination Tax Computation',
-      derivedFromBrCode: 'BR-003',
+      title: 'Chronological FIFO Invoice Settlement Logic',
+      derivedFromBrCode: 'BR-004',
       description:
-        'The system shall determine the correct tax profile of the destination business unit and calculate the corresponding tax rate to apply to each allocated expense item.',
+        'The system must apply a FIFO (First-In, First-Out) allocation logic to allocate available advance balances to eligible pending invoices based on the chronological invoice creation date.',
       isAiGenerated: true,
     },
     {
       id: 'fr-5',
       code: 'FR-005',
-      title: 'Post-Allocation Adjustment Capture',
-      derivedFromBrCode: 'BR-004',
+      title: 'Over-Allocation Blocking Validation Rule',
+      derivedFromBrCode: 'BR-005',
       description:
-        'The system shall support manual entry and creation of post-allocation adjustment journal entries.',
+        'The system must execute a validation rule that blocks advance allocations if the proposed allocation amount exceeds either the remaining advance pool balance or the gross invoice amount.',
       isAiGenerated: true,
     },
     {
       id: 'fr-6',
       code: 'FR-006',
-      title: 'Multi-Level Approval Routing',
-      derivedFromBrCode: 'BR-004',
+      title: 'Adjusted Net Payable Amount Display',
+      derivedFromBrCode: 'BR-006',
       description:
-        'The system shall provide an approval and routing workflow to track, review, and approve adjustment entries before posting.',
+        'The system must calculate and display the adjusted net payable amount for the supplier invoice by subtracting the verified allocated advance amount from the gross invoice amount.',
       isAiGenerated: true,
     },
     {
       id: 'fr-7',
       code: 'FR-007',
-      title: 'Automated Multi-Lateral Math Check',
-      derivedFromBrCode: 'BR-005',
+      title: 'Post-Approval Advance Pool Balance Update',
+      derivedFromBrCode: 'BR-007',
       description:
-        'The system shall automatically execute a reconciliation check comparing the sum of all allocated expenses plus post-allocation adjustments with the original prepaid bill extract total.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'fr-8',
-      code: 'FR-008',
-      title: 'Ledger Post Exception Gating',
-      derivedFromBrCode: 'BR-006',
-      description:
-        'The system shall block ledger posting execution and generate an exception log if any variance is detected during the reconciliation check.',
+        'The system must instantly update and decrement the supplier\'s active advance pool balance upon the formal approval of the matching invoice.',
       isAiGenerated: true,
     },
   ],
@@ -328,243 +240,145 @@ The system shall enforce strict mathematical reconciliation across all prepaid e
     {
       id: 'tr-1',
       code: 'TR-001',
-      title: 'Multi-Format Ingestion Pipeline',
+      title: 'RESTful ERP Procurement Integration APIs',
       derivedFromFrCodes: ['FR-001'],
       description:
-        'Implement a robust data integration pipeline to consume CSV, JSON, and database-sourced transactional extracts containing prepaid expense items.',
+        'The system must expose secure RESTful APIs with JSON payloads to integrate with third-party ERP procurement modules for real-time contract and PO retrieval.',
       isAiGenerated: true,
     },
     {
       id: 'tr-2',
       code: 'TR-002',
-      title: 'Configuration-Driven Lookup Engine',
-      derivedFromFrCodes: ['FR-002'],
+      title: 'ACID Transactional Concurrency Controls',
+      derivedFromFrCodes: ['FR-002', 'FR-007'],
       description:
-        'Build a configuration-driven rule engine to resolve General Ledger accounts dynamically using SQL/NoSQL lookups without code modification.',
+        'The sub-ledger database must enforce ACID-compliant transactional controls to prevent race conditions during concurrent updates of the supplier advance pool balances.',
       isAiGenerated: true,
     },
     {
       id: 'tr-3',
       code: 'TR-003',
-      title: '6-Decimal Precision Math Processor',
-      derivedFromFrCodes: ['FR-003'],
+      title: 'Database Indexing for Low-Latency FIFO Matching',
+      derivedFromFrCodes: ['FR-003', 'FR-004'],
       description:
-        'Develop a calculation engine to compute allocations with precision up to 6 decimal places to prevent rounding-error variances.',
+        'The database schema must index Supplier ID, Purchase Order ID, and Invoice Date/Time fields to optimize FIFO matching query response times to under 500ms.',
       isAiGenerated: true,
     },
     {
       id: 'tr-4',
       code: 'TR-004',
-      title: 'Jurisdiction Tax Engine Service',
-      derivedFromFrCodes: ['FR-004'],
-      description:
-        'Integrate an extensible metadata service to query destination business unit tax profiles and execute localized tax calculations.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'tr-5',
-      code: 'TR-005',
-      title: 'State-Machine Workflow Engine',
+      title: 'Stateless Business Rules Engine for Allocations',
       derivedFromFrCodes: ['FR-005', 'FR-006'],
       description:
-        'Implement a state-machine workflow engine to handle transitions (Draft, Pending Approval, Approved, Rejected) of adjustment entries.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'tr-6',
-      code: 'TR-006',
-      title: 'Lowest-Currency-Unit Reconciliation',
-      derivedFromFrCodes: ['FR-007'],
-      description:
-        'Develop an automated reconciliation processor that performs multi-lateral math validations down to the lowest currency unit.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'tr-7',
-      code: 'TR-007',
-      title: 'Hard-Gating Interceptor on GL Posting API',
-      derivedFromFrCodes: ['FR-008'],
-      description:
-        'Implement a transactional hard-gating interceptor in the GL posting API to strictly prevent execution when variance is non-zero.',
-      isAiGenerated: true,
-    },
-    {
-      id: 'tr-8',
-      code: 'TR-008',
-      title: 'Audit Lineage & Traceability Store',
-      derivedFromFrCodes: ['FR-001', 'FR-002', 'FR-003', 'FR-004', 'FR-005', 'FR-006', 'FR-007', 'FR-008'],
-      description:
-        'Design a centralized logging and auditable data lineage schema capturing all inputs, calculation configurations, intermediate states, and approvals.',
+        'The business rules engine must support a configurable stateless execution framework to evaluate allocation limits and validations before committing invoices to the database.',
       isAiGenerated: true,
     },
   ],
   expectedOutput: {
-    title: 'Allocated Expense Ledger Run',
-    type: 'Allocated Transactions',
+    title: 'Supplier Advance Allocation & Net Payable Schedule',
+    type: 'Settlement Transactions',
     description:
-      'Processed prepaid expenses and service bills mapped to target general ledger accounts, dynamically distributed across multiple Lines of Business (LOB) with destination-specific tax calculations, post-allocation adjustments, and final ledger posting reconciliation validation.',
+      'Calculated supplier advance deductions against matched incoming purchase order invoices, detailing eligible advance pools, applied FIFO deductions, verified net payable balances, and remaining sub-ledger advance assets.',
     sampleRecords: [
       {
-        recordId: 'TXN-2023-11001',
-        sourceBillId: 'INV-88992-ORACLE',
-        vendorName: 'CloudSphere Solutions',
-        prepaidGlAccount: '141200 - Prepaid IT Services',
-        originalBillTotal: 100000.0,
+        recordId: 'TXN-ADV-2026-001',
+        sourceBillId: 'INV-PO-99201',
+        vendorName: 'Apex Industrial Supplies (SUP-4001)',
+        prepaidGlAccount: '141000 - Supplier Advance Asset',
+        originalBillTotal: 85000.0,
         allocationDetails: [
           {
-            targetLob: 'LOB-US-EAST-RETAIL',
-            allocationPercentage: 60.0,
-            baseAllocatedAmount: 60000.0,
-            destinationTaxProfile: 'US-NY-RETAIL-01',
-            appliedTaxRate: 8.875,
-            calculatedTaxAmount: 5325.0,
-            allocatedTotalWithTax: 65325.0,
-          },
-          {
-            targetLob: 'LOB-US-WEST-RETAIL',
-            allocationPercentage: 40.0,
-            baseAllocatedAmount: 40000.0,
-            destinationTaxProfile: 'US-CA-RETAIL-02',
-            appliedTaxRate: 7.25,
-            calculatedTaxAmount: 2900.0,
-            allocatedTotalWithTax: 42900.0,
+            targetLob: 'PO-2026-8801',
+            allocationPercentage: 100.0,
+            baseAllocatedAmount: 50000.0,
+            destinationTaxProfile: 'ADV-DEDUCTION-STD',
+            appliedTaxRate: 0.0,
+            calculatedTaxAmount: 0.0,
+            allocatedTotalWithTax: 50000.0,
           },
         ],
         postAllocationAdjustments: [
           {
-            adjustmentId: 'ADJ-11001-01',
-            targetLob: 'LOB-US-EAST-RETAIL',
-            adjustmentAmount: -5000.0,
-            reason: 'Re-allocate seasonal capacity variance to West LOB',
-          },
-          {
-            adjustmentId: 'ADJ-11001-02',
-            targetLob: 'LOB-US-WEST-RETAIL',
-            adjustmentAmount: 5000.0,
-            reason: 'Re-allocate seasonal capacity variance to West LOB',
+            adjustmentId: 'ADJ-ADV-001',
+            targetLob: 'PO-2026-8801',
+            adjustmentAmount: 0.0,
+            reason: 'Full milestone 1 advance applied to early invoice',
           },
         ],
         approvalWorkflow: {
           currentStep: 'APPROVED',
-          assignedApprover: 'jane.doe@company.com',
-          approvalDate: '2023-11-01T14:30:00Z',
+          assignedApprover: 'ap.controller@enterprise.com',
+          approvalDate: '2026-09-08T11:00:00Z',
           workflowStatus: 'APPROVED',
         },
         reconciliationSummary: {
-          totalAllocatedBase: 100000.0,
+          totalAllocatedBase: 50000.0,
           netAdjustments: 0.0,
           reconciliationVariance: 0.0,
         },
         status: 'PROCESSED',
       },
       {
-        recordId: 'TXN-2023-11002',
-        sourceBillId: 'INV-77441-AIG',
-        vendorName: 'Apex Corporate Insurance',
-        prepaidGlAccount: '141100 - Prepaid Insurance',
-        originalBillTotal: 50000.0,
+        recordId: 'TXN-ADV-2026-002',
+        sourceBillId: 'INV-PO-99202',
+        vendorName: 'Apex Industrial Supplies (SUP-4001)',
+        prepaidGlAccount: '141000 - Supplier Advance Asset',
+        originalBillTotal: 40000.0,
         allocationDetails: [
           {
-            targetLob: 'LOB-CORP-FIN',
-            allocationPercentage: 50.0,
+            targetLob: 'PO-2026-8801',
+            allocationPercentage: 100.0,
             baseAllocatedAmount: 25000.0,
-            destinationTaxProfile: 'US-DE-CORP-EXEMPT',
+            destinationTaxProfile: 'ADV-DEDUCTION-STD',
             appliedTaxRate: 0.0,
             calculatedTaxAmount: 0.0,
             allocatedTotalWithTax: 25000.0,
           },
-          {
-            targetLob: 'LOB-US-MIDWEST-MFG',
-            allocationPercentage: 40.0,
-            baseAllocatedAmount: 20000.0,
-            destinationTaxProfile: 'US-IL-MFG-01',
-            appliedTaxRate: 6.25,
-            calculatedTaxAmount: 1250.0,
-            allocatedTotalWithTax: 21250.0,
-          },
         ],
         postAllocationAdjustments: [],
         approvalWorkflow: {
-          currentStep: 'COMPLIANCE_REVIEW',
-          assignedApprover: 'audit.team@company.com',
-          approvalDate: null,
-          workflowStatus: 'PENDING_REVIEW',
-        },
-        reconciliationSummary: {
-          totalAllocatedBase: 45000.0,
-          netAdjustments: 0.0,
-          reconciliationVariance: -5000.0,
-        },
-        status: 'EXCEPTION',
-      },
-      {
-        recordId: 'TXN-2023-11003',
-        sourceBillId: 'INV-55221-WWR',
-        vendorName: 'Worldwide Real Estate',
-        prepaidGlAccount: '141400 - Prepaid Rent',
-        originalBillTotal: 120000.0,
-        allocationDetails: [
-          {
-            targetLob: 'LOB-EMEA-UK-OFFICES',
-            allocationPercentage: 100.0,
-            baseAllocatedAmount: 120000.0,
-            destinationTaxProfile: 'UK-VAT-PROP',
-            appliedTaxRate: 20.0,
-            calculatedTaxAmount: 24000.0,
-            allocatedTotalWithTax: 144000.0,
-          },
-        ],
-        postAllocationAdjustments: [
-          {
-            adjustmentId: 'ADJ-11003-01',
-            targetLob: 'LOB-EMEA-UK-OFFICES',
-            adjustmentAmount: -10000.0,
-            reason: 'Sublease credit adjustment from shared floor space',
-          },
-        ],
-        approvalWorkflow: {
-          currentStep: 'VP_FINANCE_APPROVAL',
-          assignedApprover: 'vp.finance@company.com',
-          approvalDate: null,
-          workflowStatus: 'PENDING_REVIEW',
-        },
-        reconciliationSummary: {
-          totalAllocatedBase: 120000.0,
-          netAdjustments: -10000.0,
-          reconciliationVariance: -10000.0,
-        },
-        status: 'EXCEPTION',
-      },
-      {
-        recordId: 'TXN-2023-11004',
-        sourceBillId: 'INV-33119-MKTG',
-        vendorName: 'Omnicom Marketing Group',
-        prepaidGlAccount: '141500 - Prepaid Marketing Services',
-        originalBillTotal: 75000.0,
-        allocationDetails: [
-          {
-            targetLob: 'LOB-APAC-APAC-MKTG',
-            allocationPercentage: 100.0,
-            baseAllocatedAmount: 75000.0,
-            destinationTaxProfile: 'SG-GST-01',
-            appliedTaxRate: 8.0,
-            calculatedTaxAmount: 6000.0,
-            allocatedTotalWithTax: 81000.0,
-          },
-        ],
-        postAllocationAdjustments: [],
-        approvalWorkflow: {
-          currentStep: 'AUTO_APPROVED',
-          assignedApprover: 'system@company.com',
-          approvalDate: '2023-11-02T09:00:00Z',
+          currentStep: 'APPROVED',
+          assignedApprover: 'ap.controller@enterprise.com',
+          approvalDate: '2026-09-09T09:30:00Z',
           workflowStatus: 'APPROVED',
         },
         reconciliationSummary: {
-          totalAllocatedBase: 75000.0,
+          totalAllocatedBase: 25000.0,
           netAdjustments: 0.0,
           reconciliationVariance: 0.0,
         },
         status: 'PROCESSED',
+      },
+      {
+        recordId: 'TXN-ADV-2026-003',
+        sourceBillId: 'INV-PO-77410',
+        vendorName: 'Global Precision Tooling (SUP-5102)',
+        prepaidGlAccount: '141000 - Supplier Advance Asset',
+        originalBillTotal: 120000.0,
+        allocationDetails: [
+          {
+            targetLob: 'PO-2026-9104',
+            allocationPercentage: 100.0,
+            baseAllocatedAmount: 60000.0,
+            destinationTaxProfile: 'ADV-DEDUCTION-STD',
+            appliedTaxRate: 0.0,
+            calculatedTaxAmount: 0.0,
+            allocatedTotalWithTax: 60000.0,
+          },
+        ],
+        postAllocationAdjustments: [],
+        approvalWorkflow: {
+          currentStep: 'PENDING_APPROVAL',
+          assignedApprover: 'finance.lead@enterprise.com',
+          approvalDate: null,
+          workflowStatus: 'PENDING',
+        },
+        reconciliationSummary: {
+          totalAllocatedBase: 60000.0,
+          netAdjustments: 0.0,
+          reconciliationVariance: 0.0,
+        },
+        status: 'PENDING',
       },
     ],
   },
