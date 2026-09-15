@@ -1,48 +1,41 @@
 import { SchemaVersion } from '../types';
-import { sampleSchemaModel, rawSchemaJsonTree } from './schema.fixture';
+import { rawSchemaJson } from './schema.fixture';
 
 // Generate realistic previous versions with slight modifications for diff comparison
 const createVersion1Json = (): string => {
-  const v1Tree = JSON.parse(JSON.stringify(rawSchemaJsonTree));
-  if (v1Tree[0]?.children?.[1]?.children) {
-    // Remove last 2 classes and change a few parameters
-    v1Tree[0].children[1].children = v1Tree[0].children[1].children.slice(0, 9);
-    const adClass = v1Tree[0].children[1].children[0];
-    if (adClass) {
-      adClass.title = '#SchemaClass#1 (AD_INITIAL)';
-    }
+  const v1 = JSON.parse(JSON.stringify(rawSchemaJson));
+  // Baseline version with subset of approval activities
+  if (v1.AP && Array.isArray(v1.AP)) {
+    v1.AP = v1.AP.slice(0, 10);
   }
-  return JSON.stringify(v1Tree, null, 2);
+  return JSON.stringify(v1, null, 2);
 };
 
 const createVersion2Json = (): string => {
-  const v2Tree = JSON.parse(JSON.stringify(rawSchemaJsonTree));
-  if (v2Tree[0]?.children?.[1]?.children) {
-    const caClass = v2Tree[0].children[1].children[1];
-    if (caClass) {
-      caClass.title = '#SchemaClass#2 (CA_ALLOCATION_LEGACY)';
-    }
+  const v2 = JSON.parse(JSON.stringify(rawSchemaJson));
+  if (v2.AP && Array.isArray(v2.AP)) {
+    v2.AP = v2.AP.slice(0, 25);
   }
-  return JSON.stringify(v2Tree, null, 2);
+  return JSON.stringify(v2, null, 2);
 };
 
 export const sampleSchemaVersions: SchemaVersion[] = [
   {
     id: 'schema-v1',
     versionNumber: 1,
-    schemaGroupName: 'SCDP Generated Schema',
+    schemaGroupName: 'PO Validation',
     rawJson: createVersion1Json(),
     timestamp: 'Sep 08, 2026 · 10:45 AM',
     actor: 'AI Generation Engine',
-    changeSummary: 'Initial schema generated with 9 baseline settlement classes',
+    changeSummary: 'Initial compiled PO Validation schema specification',
   },
   {
     id: 'schema-v2',
     versionNumber: 2,
-    schemaGroupName: 'SCDP Generated Schema',
+    schemaGroupName: 'PO Validation',
     rawJson: createVersion2Json(),
     timestamp: 'Sep 09, 2026 · 02:30 PM',
     actor: 'Logaprasanth (User)',
-    changeSummary: 'Added 11-class architecture and fine-tuned CA allocation method lookup rules',
+    changeSummary: 'Expanded workflow approval routing matrix across all 18 LOBs',
   },
 ];

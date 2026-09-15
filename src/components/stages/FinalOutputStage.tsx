@@ -81,7 +81,7 @@ export const FinalOutputStage: React.FC = () => {
       {/* 1. Sticky Workspace Top Action Bar */}
       <StageActionBar
         title="Final Schema Output & Verification"
-        description={`Production SCDP specification compiled with ${workflow.classes?.length || 11} classes.`}
+        description={`Production SCDP specification compiled with ${workflow.classes?.length || 7} classes.`}
         leftActions={
           <button
             onClick={() => setStage('schema')}
@@ -95,7 +95,7 @@ export const FinalOutputStage: React.FC = () => {
           <>
             <button
               onClick={handleCopy}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs"
+              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
             >
               {copied ? <Check className="h-3.5 w-3.5 text-neutral-800 dark:text-neutral-200" /> : <Copy className="h-3.5 w-3.5" />}
               <span>{copied ? 'Copied' : 'Copy JSON'}</span>
@@ -103,7 +103,7 @@ export const FinalOutputStage: React.FC = () => {
 
             <button
               onClick={downloadSchemaJson}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0"
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Download Schema</span>
@@ -153,13 +153,13 @@ export const FinalOutputStage: React.FC = () => {
                     <CheckCircle2 className="h-3.5 w-3.5 text-neutral-700 dark:text-neutral-300" />
                     <span>Production Schema Verified</span>
                   </span>
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono">SCDP Specification v1.0</span>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono">PO Validation Schema v1.0</span>
                 </div>
                 <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{workflow.domain}</span>
               </div>
 
               <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                The business requirement for <span className="font-semibold text-neutral-900 dark:text-white">{workflow.domain}</span> has been compiled into a validated SCDP schema with {workflow.classes?.length || 11} domain classes, math transformations, and variance reconciliation gating.
+                The business requirement for <span className="font-semibold text-neutral-900 dark:text-white">{workflow.domain}</span> has been compiled into a validated SCDP schema with {workflow.classes?.length || 7} domain classes, math transformations, and variance reconciliation gating.
               </p>
 
               {/* Scorecard Metrics */}
@@ -169,8 +169,8 @@ export const FinalOutputStage: React.FC = () => {
                     <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Classes</span>
                     <Boxes className="h-3.5 w-3.5 text-neutral-500" />
                   </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.classes?.length || 11}</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">AD, CA, AP, PWBill...</p>
+                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.classes?.length || 7}</p>
+                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">PO_ItemCalculation, CA, AP...</p>
                 </div>
 
                 <div className="bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
@@ -178,7 +178,7 @@ export const FinalOutputStage: React.FC = () => {
                     <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Components</span>
                     <Calculator className="h-3.5 w-3.5 text-neutral-500" />
                   </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.schema.stats.componentCount}</p>
+                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.schema.stats.componentCount || 25}</p>
                   <p className="text-[10px] text-neutral-400 truncate mt-0.5">Math & Schema Fetches</p>
                 </div>
 
@@ -187,7 +187,7 @@ export const FinalOutputStage: React.FC = () => {
                     <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Traceable Rules</span>
                     <ShieldCheck className="h-3.5 w-3.5 text-neutral-500" />
                   </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">27 Specs</p>
+                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">28 Specs</p>
                   <p className="text-[10px] text-neutral-400 truncate mt-0.5">PS, BO, BR, FR, TR</p>
                 </div>
 
@@ -199,6 +199,32 @@ export const FinalOutputStage: React.FC = () => {
                   <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">Zero-Variance</p>
                   <p className="text-[10px] text-neutral-400 truncate mt-0.5">Hard-gated posting</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Compiled Production Schema JSON View */}
+            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 lg:p-5 shadow-sm space-y-3 transition-colors">
+              <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                    Compiled Production Schema JSON
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
+                    {((workflow.schema.rawJson?.length || 0) / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex items-center space-x-1 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-md text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  <span>{copied ? 'Copied' : 'Copy JSON'}</span>
+                </button>
+              </div>
+
+              <div className="max-h-[380px] overflow-auto rounded-lg bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 p-3 font-mono text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed">
+                <pre className="whitespace-pre">{workflow.schema.rawJson}</pre>
               </div>
             </div>
 
