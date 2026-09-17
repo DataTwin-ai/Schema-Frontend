@@ -10,9 +10,9 @@ import {
   IClassHistoryService,
   ISchemaHistoryService,
 } from './interfaces';
-import { MockRequirementsGenerationService } from './mock/MockRequirementsGenerationService';
-import { MockClassGenerationService } from './mock/MockClassGenerationService';
-import { MockSchemaGenerationService } from './mock/MockSchemaGenerationService';
+import { ApiRequirementsGenerationService } from './api/ApiRequirementsGenerationService';
+import { ApiClassGenerationService } from './api/ApiClassGenerationService';
+import { ApiSchemaGenerationService } from './api/ApiSchemaGenerationService';
 import { MockAssistantService } from './mock/MockAssistantService';
 import { MockPricingService } from './mock/MockPricingService';
 import { MockAuthService } from './mock/MockAuthService';
@@ -22,9 +22,9 @@ import { MockClassHistoryService } from './mock/MockClassHistoryService';
 import { MockSchemaHistoryService } from './mock/MockSchemaHistoryService';
 
 export * from './interfaces';
-export * from './mock/MockRequirementsGenerationService';
-export * from './mock/MockClassGenerationService';
-export * from './mock/MockSchemaGenerationService';
+export * from './api/ApiRequirementsGenerationService';
+export * from './api/ApiClassGenerationService';
+export * from './api/ApiSchemaGenerationService';
 export * from './mock/MockAssistantService';
 export * from './mock/MockPricingService';
 export * from './mock/MockAuthService';
@@ -33,10 +33,10 @@ export * from './mock/MockRequirementHistoryService';
 export * from './mock/MockClassHistoryService';
 export * from './mock/MockSchemaHistoryService';
 
-// Service factory / registry allowing replacement with Real AI / Backend Services in future
-export const requirementsService: IRequirementsGenerationService = new MockRequirementsGenerationService();
-export const classService: IClassGenerationService = new MockClassGenerationService();
-export const schemaService: ISchemaGenerationService = new MockSchemaGenerationService();
+// Service factory / registry using Real Backend Services
+export const requirementsService: IRequirementsGenerationService = new ApiRequirementsGenerationService();
+export const classService: IClassGenerationService = new ApiClassGenerationService();
+export const schemaService: ISchemaGenerationService = new ApiSchemaGenerationService();
 export const assistantService: IAssistantService = new MockAssistantService();
 export const pricingService: IPricingService = new MockPricingService();
 export const authService: IAuthService = new MockAuthService();
