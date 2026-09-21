@@ -83,12 +83,20 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       });
     }
 
+    const requestBody = {
+      highLevelRequirement: input.highLevelRequirement,
+      generatedBusinessRequirement: input.generatedBusinessRequirement,
+      isBusinessRequirementGenerated: true,
+      supportingDocuments: input.supportingDocuments || [],
+      additionalInstructions: input.additionalInstructions || ""
+    };
+
     const response = await fetch(`${this.apiUrl}/generate/requirements`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(input),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -112,19 +120,14 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
 
     // Cast or map to RequirementsModel exactly
     return {
-      domain: requirementsData.domain || 'Unknown Domain',
-      highLevelRequirement: requirementsData.highLevelRequirement || input.highLevelRequirement || '',
-      problemStatements: requirementsData.problemStatements || [],
-      businessObjectives: requirementsData.businessObjectives || [],
-      businessRequirements: requirementsData.businessRequirements || [],
-      financeRequirements: requirementsData.financeRequirements || [],
-      technicalRequirements: requirementsData.technicalRequirements || [],
-      expectedOutput: requirementsData.expectedOutput || {
-        title: 'Expected Output',
-        type: 'Table',
-        description: '',
-        sampleRecords: []
-      },
+      domain: requirementsData.domain,
+      highLevelRequirement: requirementsData.highLevelRequirement,
+      problemStatements: requirementsData.problemStatements,
+      businessObjectives: requirementsData.businessObjectives,
+      businessRequirements: requirementsData.businessRequirements,
+      financeRequirements: requirementsData.financeRequirements,
+      technicalRequirements: requirementsData.technicalRequirements,
+      expectedOutput: requirementsData.expectedOutput,
       generatedAt: requirementsData.generatedAt || new Date().toISOString(),
       lastEditedAt: requirementsData.lastEditedAt
     } as RequirementsModel;
