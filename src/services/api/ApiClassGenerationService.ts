@@ -15,9 +15,9 @@ export class ApiClassGenerationService implements IClassGenerationService {
     if (onProgress) {
       onProgress({
         id: 'class-init',
-        status: 'in-progress',
-        message: 'Connecting to backend...',
-        details: 'Sending generate classes request'
+        status: 'active',
+        label: 'Connecting to backend...',
+        detail: 'Sending generate classes request'
       });
     }
 
@@ -39,8 +39,8 @@ export class ApiClassGenerationService implements IClassGenerationService {
     if (onProgress) {
       onProgress({
         id: 'class-done',
-        status: 'completed',
-        message: 'Classes generated successfully',
+        status: 'done',
+        label: 'Classes generated successfully',
       });
     }
 

@@ -16,35 +16,58 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     if (onProgress) {
       onProgress({
         id: 'req-init',
-        status: 'in-progress',
-        message: 'Connecting to backend...',
-        details: 'Sending business requirements request'
+        status: 'active',
+        label: 'Connecting to backend...',
+        detail: 'Sending business requirements request'
       });
     }
 
-    const response = await fetch(`${this.apiUrl}/generate/business-requirement`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ highLevelInput, supportingDocs }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to generate business requirement: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    if (onProgress) {
-      onProgress({
-        id: 'req-done',
-        status: 'completed',
-        message: 'Requirement generated',
+    try {
+      const response = await fetch(`${this.apiUrl}/generate/business-requirement`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        body: JSON.stringify({ 
+          highLevelRequirement: highLevelInput 
+        }),
       });
-    }
 
-    return data.result || data.text || '';
+      if (!response.ok) {
+        throw new Error(`Failed to generate business requirement: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type");
+      let resultText = '';
+
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        const data = await response.json();
+        resultText = data.businessRequirement || data.result || data.text || data.data || '';
+      } else {
+        resultText = await response.text();
+      }
+
+      if (onProgress) {
+        onProgress({
+          id: 'req-done',
+          status: 'done',
+          label: 'Requirement generated successfully',
+        });
+      }
+
+      return resultText;
+    } catch (error: any) {
+      if (onProgress) {
+        onProgress({
+          id: 'req-error',
+          status: 'error',
+          label: 'Generation failed',
+          detail: error.message || 'Unknown error occurred'
+        });
+      }
+      throw error;
+    }
   }
 
   async generateRequirements(
@@ -54,9 +77,9 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     if (onProgress) {
       onProgress({
         id: 'gen-init',
-        status: 'in-progress',
-        message: 'Connecting to backend...',
-        details: 'Sending structured requirements request'
+        status: 'active',
+        label: 'Connecting to backend...',
+        detail: 'Sending structured requirements request'
       });
     }
 
@@ -82,15 +105,15 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     if (onProgress) {
       onProgress({
         id: 'gen-done',
-        status: 'completed',
-        message: 'Requirements structure generated successfully',
+        status: 'done',
+        label: 'Requirements structure generated successfully',
       });
     }
 
     // Cast or map to RequirementsModel exactly
     return {
-      domain: requirementsData.domain || input.domain || 'Unknown Domain',
-      highLevelRequirement: requirementsData.highLevelRequirement || input.description || '',
+      domain: requirementsData.domain || 'Unknown Domain',
+      highLevelRequirement: requirementsData.highLevelRequirement || input.highLevelRequirement || '',
       problemStatements: requirementsData.problemStatements || [],
       businessObjectives: requirementsData.businessObjectives || [],
       businessRequirements: requirementsData.businessRequirements || [],

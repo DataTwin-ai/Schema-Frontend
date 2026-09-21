@@ -16,9 +16,9 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     if (onProgress) {
       onProgress({
         id: 'schema-init',
-        status: 'in-progress',
-        message: 'Connecting to backend...',
-        details: 'Sending generate schema request'
+        status: 'active',
+        label: 'Connecting to backend...',
+        detail: 'Sending generate schema request'
       });
     }
 
@@ -40,8 +40,8 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     if (onProgress) {
       onProgress({
         id: 'schema-done',
-        status: 'completed',
-        message: 'Schema generated successfully',
+        status: 'done',
+        label: 'Schema generated successfully',
       });
     }
 
