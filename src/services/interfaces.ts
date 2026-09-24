@@ -1,4 +1,4 @@
-import {
+﻿import {
   BusinessInput,
   RequirementsModel,
   SchemaClass,
@@ -94,4 +94,5 @@ export interface ISchemaHistoryService {
   getVersions(): Promise<SchemaVersion[]>;
   recordVersion(version: Omit<SchemaVersion, 'id' | 'versionNumber'>): Promise<SchemaVersion>;
 }
+
 

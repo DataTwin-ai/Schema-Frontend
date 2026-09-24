@@ -1,6 +1,8 @@
 import { ISchemaGenerationService, ProgressCallback } from '../interfaces';
 import { RequirementsModel, SchemaClass, SchemaModel, SchemaTreeNode, SchemaValidationResult } from '../../types';
 
+const POLL_INTERVAL_MS = 1500;
+
 export class ApiSchemaGenerationService implements ISchemaGenerationService {
   private apiUrl: string;
 
@@ -11,22 +13,16 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
   async generateSchema(
     requirements: RequirementsModel,
     classes: SchemaClass[],
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
   ): Promise<SchemaModel> {
     if (onProgress) {
-      onProgress({
-        id: 'schema-init',
-        status: 'active',
-        label: 'Connecting to backend...',
-        detail: 'Sending generate schema request'
-      });
+      onProgress({ id: 'schema-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate schema request' });
     }
 
     const response = await fetch(`${this.apiUrl}/generate/schema`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ requirements, classes }),
     });
 
@@ -34,18 +30,47 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       throw new Error(`Failed to generate schema: ${response.statusText}`);
     }
 
-    const data = await response.json();
-    // Normalize: backend may return the schema directly, or wrapped in data.schema / data.result
-    const rawSchema = data.schema || data.result || data;
+    const initData = await response.json();
 
-    if (onProgress) {
-      onProgress({
-        id: 'schema-done',
-        status: 'done',
-        label: 'Schema generated successfully',
-      });
+    // New async flow: backend returns { operationId, status: 'RUNNING' }
+    if (initData.operationId) {
+      const operationId: string = initData.operationId;
+      if (onOperationStarted) onOperationStarted(operationId);
+
+      while (true) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+        const baseUrl = this.apiUrl.endsWith('/api') ? this.apiUrl.slice(0, -4) : this.apiUrl;
+        const statusRes = await fetch(`${baseUrl}/api/operations/${operationId}/status`);
+        if (!statusRes.ok) throw new Error('Failed to poll operation status');
+
+        const statusData = await statusRes.json();
+
+        if (onProgress) {
+          onProgress({
+            id: 'schema-progress',
+            status: 'active',
+            label: `Generating Schema... (${statusData.status})`,
+            detail: statusData.progress ? `Step ${statusData.progress.current} of ${statusData.progress.total}` : '',
+          });
+        }
+
+        if (statusData.status === 'COMPLETED') {
+          const rawSchema = statusData.schema || statusData.result || statusData;
+          return this.buildSchemaModel(rawSchema, classes);
+        }
+
+        if (statusData.status === 'STOPPED') throw new Error('Schema generation was stopped by user');
+        if (statusData.status === 'FAILED') throw new Error(statusData.error || 'Schema generation failed');
+      }
     }
 
+    // Legacy synchronous fallback
+    const rawSchema = initData.schema || initData.result || initData;
+    return this.buildSchemaModel(rawSchema, classes);
+  }
+
+  private buildSchemaModel(rawSchema: any, classes: SchemaClass[]): SchemaModel {
     // Build SchemaTreeNode[] from any JSON value, recursively.
     // This handles any structure the backend returns — SCDP objects, arrays, scalars.
     const buildTreeFromJson = (value: any, label: string, depth = 0): SchemaTreeNode => {
@@ -192,3 +217,4 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     } as SchemaModel;
   }
 }
+

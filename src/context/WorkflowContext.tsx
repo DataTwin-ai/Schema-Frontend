@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
@@ -596,6 +596,9 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
             return { ...prev, currentProgressSteps: newSteps };
           });
+        },
+                (operationId: string) => {
+          setActiveOperation({ operationId, status: 'RUNNING', operationType: 'CLASSES' });
         }
       );
 
@@ -644,6 +647,9 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
             return { ...prev, currentProgressSteps: newSteps };
           });
+        },
+                (operationId: string) => {
+          setActiveOperation({ operationId, status: 'RUNNING', operationType: 'SCHEMA' });
         }
       );
 
@@ -1164,3 +1170,6 @@ export const useWorkflow = () => {
   }
   return context;
 };
+
+
+
