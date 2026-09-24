@@ -29,6 +29,7 @@ export interface SchemaClass {
   associatedRequirements?: string[];
   metadata?: Record<string, unknown>;
   isCustomAdded?: boolean;
+  rawText?: string;
 }
 
 export interface ClassVersion {

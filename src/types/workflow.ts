@@ -9,6 +9,8 @@ export type WorkflowStage =
   | 'schema'
   | 'output';
 
+export type RunStatus = 'DRAFT' | 'COMPLETED' | 'FAILED';
+
 export type GenerationStatus = 'idle' | 'generating' | 'completed' | 'error';
 
 export interface GenerationProgressStep {
@@ -43,6 +45,14 @@ export interface AdditionalInformation {
   author?: string;
 }
 
+export interface AdditionalRequirement {
+  id: string;
+  fileName: string;
+  content: string;
+  sourceScreen: string;
+  uploadedAt?: string;
+}
+
 export interface BusinessInput {
   highLevelRequirement: string;
   generatedBusinessRequirement?: string;
@@ -56,11 +66,13 @@ export interface SchemaGenerationWorkflow {
   title: string;
   domain: string;
   stage: WorkflowStage;
+  runStatus: RunStatus;
   businessInput: BusinessInput;
   requirements?: RequirementsModel;
   classes?: SchemaClass[];
   schema?: SchemaModel;
   additionalInformation: AdditionalInformation[];
+  additionalRequirements?: AdditionalRequirement[];
   generationStatus: GenerationStatus;
   currentProgressSteps: GenerationProgressStep[];
   updatedAt: string;

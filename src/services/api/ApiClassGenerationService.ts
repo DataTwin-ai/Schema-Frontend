@@ -74,7 +74,8 @@ export class ApiClassGenerationService implements IClassGenerationService {
         reviewPoints: rawClass.review_points || rawClass.reviewPoints || '',
         associatedRequirements: rawClass.associated_requirements || rawClass.associatedRequirements || [],
         metadata: rawClass.metadata || {},
-        isCustomAdded: rawClass.isCustomAdded || false
+        isCustomAdded: rawClass.isCustomAdded || false,
+        rawText: rawClass.rawText ?? rawClass.raw_text
       } as SchemaClass;
     });
   }

@@ -35,6 +35,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     }
 
     const data = await response.json();
+    // Normalize: backend may return the schema directly, or wrapped in data.schema / data.result
     const rawSchema = data.schema || data.result || data;
 
     if (onProgress) {
@@ -45,21 +46,125 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       });
     }
 
-    // Map the backend root tree to frontend SchemaTreeNode format if it differs
-    const mapTreeNodes = (nodes: any[]): SchemaTreeNode[] => {
-      if (!nodes || !Array.isArray(nodes)) return [];
-      return nodes.map(node => ({
-        title: node.title || node.name || 'Unknown Node',
-        technicalName: node.technicalName || node.technical_name || node.technical || '',
-        val: node.val || node.value || undefined,
-        equality: node.equality || undefined,
-        children: mapTreeNodes(node.children || []),
-        expanded: node.expanded || false
-      }));
+    // Build SchemaTreeNode[] from any JSON value, recursively.
+    // This handles any structure the backend returns — SCDP objects, arrays, scalars.
+    const buildTreeFromJson = (value: any, label: string, depth = 0): SchemaTreeNode => {
+      if (value === null || value === undefined) {
+        return {
+          title: label,
+          technicalName: label,
+          val: String(value),
+          children: [],
+        };
+      }
+
+      if (typeof value !== 'object') {
+        // Scalar: string, number, boolean
+        return {
+          title: label,
+          technicalName: label,
+          val: String(value),
+          children: [],
+        };
+      }
+
+      if (Array.isArray(value)) {
+        // Array: render each element as a child
+        return {
+          title: `${label} (${value.length})`,
+          technicalName: label,
+          children: value.map((item, idx) => {
+            // If item is an object with a name or title field, use it
+            const childLabel =
+              item?.title ||
+              item?.name ||
+              item?.class_name ||
+              item?.className ||
+              item?.technicalName ||
+              item?.technical_name ||
+              `[${idx}]`;
+            return buildTreeFromJson(item, String(childLabel), depth + 1);
+          }),
+        };
+      }
+
+      // Object: each key becomes a child node
+      // Prefer a meaningful display name from common backend fields
+      const displayTitle =
+        value.title ||
+        value.name ||
+        value.class_name ||
+        value.className ||
+        value.technicalName ||
+        value.technical_name ||
+        label;
+
+      const children: SchemaTreeNode[] = Object.entries(value)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([key, v]) => buildTreeFromJson(v, key, depth + 1));
+
+      return {
+        title: String(displayTitle),
+        technicalName: value.technicalName || value.technical_name || label,
+        val: value.val || value.value || undefined,
+        equality: value.equality || undefined,
+        children,
+        expanded: depth === 0,
+      };
     };
 
-    const rootNodes = mapTreeNodes(Array.isArray(rawSchema) ? rawSchema : (rawSchema.root || []));
-    const rawJsonStr = typeof rawSchema === 'string' ? rawSchema : JSON.stringify(rawSchema, null, 2);
+    // Build the root tree from the backend's root array.
+    // Support multiple possible root field names.
+    const rawRoot: any[] = Array.isArray(rawSchema)
+      ? rawSchema
+      : Array.isArray(rawSchema.root)
+      ? rawSchema.root
+      : Array.isArray(rawSchema.classes)
+      ? rawSchema.classes
+      : [];
+
+    // If the backend already provides SchemaTreeNode-shaped nodes (with title/technicalName),
+    // use them directly; otherwise build from raw JSON.
+    const hasNativeTreeStructure =
+      rawRoot.length > 0 &&
+      typeof rawRoot[0] === 'object' &&
+      rawRoot[0] !== null &&
+      ('title' in rawRoot[0] || 'technicalName' in rawRoot[0]);
+
+    let rootNodes: SchemaTreeNode[];
+
+    if (hasNativeTreeStructure) {
+      // Backend already returns proper tree nodes — map directly preserving structure
+      const mapTreeNodes = (nodes: any[]): SchemaTreeNode[] => {
+        if (!nodes || !Array.isArray(nodes)) return [];
+        return nodes.map(node => ({
+          title: node.title || node.name || 'Unknown Node',
+          technicalName: node.technicalName || node.technical_name || node.technical || '',
+          val: node.val || node.value || undefined,
+          equality: node.equality || undefined,
+          children: mapTreeNodes(node.children || []),
+          expanded: node.expanded || false,
+        }));
+      };
+      rootNodes = mapTreeNodes(rawRoot);
+    } else {
+      // Backend returns raw SCDP JSON — build tree dynamically from the root array
+      rootNodes = rawRoot.map((item, idx) => {
+        const label =
+          item?.title ||
+          item?.name ||
+          item?.class_name ||
+          item?.className ||
+          `Class ${idx + 1}`;
+        return buildTreeFromJson(item, String(label), 0);
+      });
+    }
+
+    // The JSON editor always gets the COMPLETE backend response
+    const rawJsonStr = JSON.stringify(rawSchema, null, 2);
+
+    // Class count comes from the actual root data length, not the classes array
+    const classCount = rawRoot.length || classes.length;
 
     return {
       schemaGroupName: rawSchema.schemaGroupName || rawSchema.schema_group_name || 'Generated Schema',
@@ -68,7 +173,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       generatedAt: rawSchema.generatedAt || new Date().toISOString(),
       version: rawSchema.version || '1.0',
       stats: rawSchema.stats || {
-        classCount: classes.length,
+        classCount,
         componentCount: classes.reduce((acc, cls) => acc + (cls.components?.length || 0), 0),
         fieldCount: 0,
         formulaCount: classes.reduce((acc, cls) => acc + (cls.formulaRules?.length || 0), 0),
@@ -78,12 +183,12 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
         errors: [],
         warnings: [],
         stats: {
-          totalClasses: classes.length,
+          totalClasses: classCount,
           totalComponents: 0,
           totalFields: 0,
-          totalLookupRules: 0
-        }
-      } as SchemaValidationResult
+          totalLookupRules: 0,
+        },
+      } as SchemaValidationResult,
     } as SchemaModel;
   }
 }

@@ -28,6 +28,7 @@ import { SchemaTreeNode } from '../../types';
 import { StageActionBar } from '../layout/StageActionBar';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
+import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 
 export const SchemaStudioStage: React.FC = () => {
   const { 
@@ -444,7 +445,7 @@ export const SchemaStudioStage: React.FC = () => {
                   <h3 className="text-xs font-bold text-neutral-900 dark:text-white">Hierarchical Schema Tree</h3>
                 </div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
-                  {workflow.schema.stats.classCount} Classes
+                  {workflow.schema.root.length} {workflow.schema.root.length === 1 ? 'Class' : 'Classes'}
                 </span>
               </div>
 
@@ -462,8 +463,20 @@ export const SchemaStudioStage: React.FC = () => {
 
               {/* Tree View Content */}
               <div className="max-h-[480px] overflow-y-auto space-y-0.5 pr-1 font-mono text-xs">
-                {workflow.schema.root.map((rootNode, idx) =>
-                  renderTreeNode(rootNode, `root-${idx}`, 0)
+                {workflow.schema.root.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center space-y-2">
+                    <AlertCircle className="h-5 w-5 text-neutral-400" />
+                    <p className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
+                      Schema tree is empty
+                    </p>
+                    <p className="text-[10px] text-neutral-400 dark:text-neutral-500 max-w-[200px]">
+                      The backend returned an empty root. The JSON editor on the right contains the complete raw response.
+                    </p>
+                  </div>
+                ) : (
+                  workflow.schema.root.map((rootNode, idx) =>
+                    renderTreeNode(rootNode, `root-${idx}`, 0)
+                  )
                 )}
               </div>
             </div>

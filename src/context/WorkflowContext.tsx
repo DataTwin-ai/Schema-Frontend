@@ -24,6 +24,8 @@ import {
   RequirementVersion,
   ClassVersion,
   SchemaVersion,
+  AdditionalRequirement,
+  RunStatus,
 } from '../types';
 import { sampleBusinessInput } from '../fixtures/sampleInput.fixture';
 import { 
@@ -92,6 +94,16 @@ interface WorkflowContextValue {
   closeGeneratingModal: () => void;
   generationOperationLabel: string;
   setGenerationOperationLabel: (label: string) => void;
+  
+  activeOperation: {
+    operationId: string;
+    type: string;
+    status: 'RUNNING' | 'PAUSE_REQUESTED' | 'PAUSED' | 'RESUME_REQUESTED' | 'STOP_REQUESTED' | 'STOPPED' | 'COMPLETED' | 'FAILED';
+    message?: string;
+    progress?: number;
+    error?: string;
+  } | null;
+  setActiveOperation: (op: any) => void;
 
   // Requirements updates
   updateProblemStatement: (id: string, updated: Partial<ProblemStatement>) => void;
@@ -102,6 +114,11 @@ interface WorkflowContextValue {
   updateTechnicalRequirement: (id: string, updated: Partial<TechnicalRequirement>) => void;
   addAdditionalInformation: (info: Omit<AdditionalInformation, 'id' | 'createdAt'>) => void;
   removeAdditionalInformation: (id: string) => void;
+  // Additional Requirements
+  additionalRequirements: AdditionalRequirement[];
+  addAdditionalRequirement: (req: Omit<AdditionalRequirement, 'id' | 'uploadedAt'>) => void;
+  removeAdditionalRequirement: (id: string) => void;
+  clearAdditionalRequirements: () => void;
 
   // Classes updates
   updateClass: (id: string, updated: Partial<SchemaClass>) => void;
@@ -124,6 +141,11 @@ interface WorkflowContextValue {
 
   // Global reset
   resetWorkflow: () => void;
+
+  // History Load
+  loadHistoricalSchemaForEdit: (jsonStr: string) => void;
+
+  setRunStatus: (status: RunStatus) => void;
 }
 
 const initialWorkflow: SchemaGenerationWorkflow = {
@@ -131,6 +153,7 @@ const initialWorkflow: SchemaGenerationWorkflow = {
   title: 'Accounts Payable & Prepaid Expense Allocation',
   domain: 'Accounts Payable and Expense Allocation',
   stage: 'business-input',
+  runStatus: 'DRAFT',
   businessInput: {
     highLevelRequirement: '',
     generatedBusinessRequirement: '',
@@ -139,6 +162,7 @@ const initialWorkflow: SchemaGenerationWorkflow = {
     additionalInstructions: '',
   },
   additionalInformation: [],
+  additionalRequirements: [],
   generationStatus: 'idle',
   currentProgressSteps: [],
   updatedAt: new Date().toISOString(),
@@ -166,6 +190,8 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   // App Navigation & History Edit State
   const [activeView, setActiveView] = useState<'generator' | 'history'>('generator');
   const [currentHistoryRecord, setCurrentHistoryRecord] = useState<HistoryRecord | null>(null);
+  
+  const [activeOperation, setActiveOperation] = useState<any>(null);
 
   // Requirement-Level Version History State
   const [requirementVersions, setRequirementVersions] = useState<Record<string, RequirementVersion[]>>({});
@@ -351,6 +377,10 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     setWorkflow((prev) => ({ ...prev, stage, updatedAt: new Date().toISOString() }));
   }, []);
 
+  const setRunStatus = useCallback((status: RunStatus) => {
+    setWorkflow((prev) => ({ ...prev, runStatus: status, updatedAt: new Date().toISOString() }));
+  }, []);
+
   const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     setWorkflow((prev) => ({
       ...prev,
@@ -423,13 +453,23 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     setActiveView('generator');
   }, []);
 
+  const loadHistoricalSchemaForEdit = useCallback((jsonStr: string) => {
+    // Only update stage and json, do not wipe the current workflow.
+    setWorkflow((prev) => ({
+      ...prev,
+      stage: 'schema'
+    }));
+    setEditedSchemaJson(jsonStr);
+    setActiveView('generator');
+  }, []);
+
   const saveToHistory = useCallback(async (): Promise<HistoryRecord> => {
     const record: HistoryRecord = {
       id: currentHistoryRecord ? currentHistoryRecord.id : `hist-${Date.now()}`,
       name: workflow.title || 'Untitled SCDP Schema',
       domain: workflow.domain || 'Financial Operations',
       description: workflow.businessInput.highLevelRequirement || 'Custom generated SCDP schema.',
-      status: workflow.stage === 'output' ? 'Completed' : 'Draft',
+      status: workflow.runStatus === 'COMPLETED' ? 'Completed' : (workflow.runStatus === 'FAILED' ? 'Failed' : 'Draft'),
       version: currentHistoryRecord ? currentHistoryRecord.version : 'v1.0',
       classCount: workflow.classes?.length || 0,
       componentCount: workflow.schema?.stats.componentCount || 0,
@@ -483,7 +523,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
     } catch (err) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error' }));
+      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
     } finally {
       setTimeout(() => setIsGeneratingModalOpen(false), 500);
     }
@@ -525,7 +565,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
     } catch (err) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error' }));
+      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
     } finally {
       setTimeout(() => setIsGeneratingModalOpen(false), 500);
     }
@@ -559,6 +599,10 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
       );
 
+      if (!result || result.length === 0) {
+        throw new Error("No classes generated");
+      }
+
       setWorkflow((prev) => ({
         ...prev,
         classes: result,
@@ -568,7 +612,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
     } catch (err) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error' }));
+      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
     } finally {
       setTimeout(() => setIsGeneratingModalOpen(false), 500);
     }
@@ -613,7 +657,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       setEditedSchemaJson(result.rawJson);
     } catch (err) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error' }));
+      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
     } finally {
       setTimeout(() => setIsGeneratingModalOpen(false), 500);
     }
@@ -869,7 +913,37 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     }));
   }, []);
 
-  const removeClass = useCallback((id: string) => {
+  // Additional Requirements Handlers
+  const addAdditionalRequirement = useCallback((req: Omit<AdditionalRequirement, 'id' | 'uploadedAt'>) => {
+    const newReq: AdditionalRequirement = {
+      ...req,
+      id: `add-req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      uploadedAt: new Date().toISOString(),
+    };
+    setWorkflow((prev) => ({
+      ...prev,
+      additionalRequirements: [...(prev.additionalRequirements || []), newReq],
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+  const removeAdditionalRequirement = useCallback((id: string) => {
+    setWorkflow((prev) => ({
+      ...prev,
+      additionalRequirements: (prev.additionalRequirements || []).filter((r) => r.id !== id),
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+  const clearAdditionalRequirements = useCallback(() => {
+    setWorkflow((prev) => ({
+      ...prev,
+      additionalRequirements: [],
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
+    const removeClass = useCallback((id: string) => {
     setWorkflow((prev) => {
       if (!prev.classes) return prev;
       return {
@@ -1012,6 +1086,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       value={{
         workflow,
         setStage,
+        setRunStatus,
         updateBusinessInput,
         loadSampleInput,
         addSupportingDocument,
@@ -1046,6 +1121,8 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         closeGeneratingModal,
         generationOperationLabel,
         setGenerationOperationLabel,
+        activeOperation,
+        setActiveOperation,
         updateProblemStatement,
         updateBusinessObjective,
         updateBusinessRequirement,
@@ -1054,6 +1131,10 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         updateTechnicalRequirement,
         addAdditionalInformation,
         removeAdditionalInformation,
+        additionalRequirements: workflow.additionalRequirements || [],
+        addAdditionalRequirement,
+        removeAdditionalRequirement,
+        clearAdditionalRequirements,
         updateClass,
         addClass,
         removeClass,
@@ -1068,6 +1149,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         handleAssistantAction,
         clearAssistantChat,
         resetWorkflow,
+        loadHistoricalSchemaForEdit,
       }}
     >
       {children}

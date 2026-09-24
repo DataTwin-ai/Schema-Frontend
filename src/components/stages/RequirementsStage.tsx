@@ -25,6 +25,7 @@ import { RequirementCategoryChip } from '../common/RequirementCategoryChip';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { AddNewBusinessRequirementModal } from '../common/AddNewBusinessRequirementModal';
+import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 
 interface RequirementItem {
   id: string;
@@ -869,7 +870,7 @@ export const RequirementsStage: React.FC = () => {
           generateClasses();
         }}
         title="Do you want to add any additional information?"
-        generationLabel="Generate Classes"
+        generationLabel="Proceed to Classes"
       />
 
       {/* Add New Business Requirement Modal */}

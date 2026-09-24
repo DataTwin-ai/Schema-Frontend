@@ -86,6 +86,10 @@ export const AssistantPanel: React.FC = () => {
           'Explain reconciliation variance check',
           'How to export for downstream pipeline?',
         ];
+      default:
+        return [
+          'How can I help with DataTwin?',
+        ];
     }
   };
 

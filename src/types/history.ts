@@ -1,6 +1,6 @@
 import { SchemaGenerationWorkflow } from './workflow';
 
-export type HistoryStatus = 'Draft' | 'Completed' | 'In Review' | 'Archived';
+export type HistoryStatus = 'Draft' | 'Completed' | 'In Review' | 'Archived' | 'Failed';
 
 export interface HistoryRecord {
   id: string;

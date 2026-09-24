@@ -23,19 +23,31 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/generate/business-requirement`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json, text/plain, */*'
-        },
-        body: JSON.stringify({ 
-          highLevelRequirement: highLevelInput 
-        }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${this.apiUrl}/generate/business-requirement`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*'
+          },
+          body: JSON.stringify({ 
+            highLevelRequirement: highLevelInput 
+          }),
+        });
+      } catch (netErr: any) {
+        throw new Error(`Unable to connect to backend API at ${this.apiUrl}. Please ensure the FastAPI server is running.`);
+      }
 
       if (!response.ok) {
-        throw new Error(`Failed to generate business requirement: ${response.status} ${response.statusText}`);
+        let errDetail = `${response.status} ${response.statusText}`;
+        try {
+          const errJson = await response.json();
+          if (errJson && errJson.detail) {
+            errDetail = errJson.detail;
+          }
+        } catch (_) {}
+        throw new Error(`Failed to generate business requirement: ${errDetail}`);
       }
 
       const contentType = response.headers.get("content-type");
@@ -91,23 +103,31 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       additionalInstructions: input.additionalInstructions || ""
     };
 
-    const response = await fetch(`${this.apiUrl}/generate/requirements`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.apiUrl}/generate/requirements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+    } catch (netErr: any) {
+      throw new Error(`Unable to connect to backend API at ${this.apiUrl}. Please ensure the FastAPI server is running.`);
+    }
 
     if (!response.ok) {
-      throw new Error(`Failed to generate requirements: ${response.statusText}`);
+      let errDetail = `${response.status} ${response.statusText}`;
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.detail) {
+          errDetail = errJson.detail;
+        }
+      } catch (_) {}
+      throw new Error(`Failed to generate requirements: ${errDetail}`);
     }
 
     const data = await response.json();
-    
-    // The backend might return raw text or a slightly different JSON format.
-    // Assuming backend returns a valid JSON that closely matches RequirementsModel
-    // We will cast it and map if necessary. If the backend wraps it in a data or result object:
     const requirementsData = data.result || data;
 
     if (onProgress) {
@@ -118,7 +138,6 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       });
     }
 
-    // Cast or map to RequirementsModel exactly
     return {
       domain: requirementsData.domain,
       highLevelRequirement: requirementsData.highLevelRequirement,

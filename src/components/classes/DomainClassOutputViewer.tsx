@@ -74,6 +74,16 @@ export const DomainClassOutputViewer: React.FC<DomainClassOutputViewerProps> = (
         )}
       </div>
 
+      {/* FULL CLASS SPECIFICATION Section */}
+      <div className="bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 space-y-2">
+        <span className="text-[11px] font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wider block">
+          FULL CLASS SPECIFICATION
+        </span>
+        <pre className="p-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg text-xs font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
+          {cls.rawText ? cls.rawText : 'Full class specification is not available.'}
+        </pre>
+      </div>
+
       {/* Generated Output Table */}
       <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-neutral-900 shadow-2xs">
         <div className="px-4 py-2.5 bg-neutral-50 dark:bg-neutral-950 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">

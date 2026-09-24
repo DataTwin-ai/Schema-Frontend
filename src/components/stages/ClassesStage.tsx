@@ -25,6 +25,8 @@ import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffVie
 import { formatClassSpecification } from '../../utils/classUtils';
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { ClassViewModal } from '../classes/ClassViewModal';
+import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import { SCDPInputsModal } from './SCDPInputsModal';
 
 interface ClassRowProps {
   item: SchemaClass;
@@ -304,6 +306,16 @@ const ClassRow: React.FC<ClassRowProps> = ({
               </div>
             )}
 
+            {/* FULL CLASS SPECIFICATION Section */}
+            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 block">
+                FULL CLASS SPECIFICATION
+              </span>
+              <pre className="p-3 bg-neutral-50 dark:bg-neutral-950 border border-neutral-200/70 dark:border-neutral-800/70 rounded-lg text-xs font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap break-words max-h-80 overflow-y-auto">
+                {item.rawText ? item.rawText : 'Full class specification is not available.'}
+              </pre>
+            </div>
+
             {/* Footer Metadata */}
             <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-neutral-800/80 text-[11px] text-neutral-400 dark:text-neutral-500">
               <div className="flex items-center space-x-2">
@@ -550,6 +562,7 @@ export const ClassesStage: React.FC = () => {
   const [viewingClass, setViewingClass] = useState<SchemaClass | null>(null);
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [isInputsModalOpen, setIsInputsModalOpen] = useState(false);
 
   // New Class Form State
   const [newClassName, setNewClassName] = useState('');
@@ -639,6 +652,14 @@ export const ClassesStage: React.FC = () => {
         }
         rightActions={
           <>
+            <button
+              onClick={() => setIsInputsModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer mr-2"
+            >
+              <Eye className="h-3.5 w-3.5 text-neutral-600 dark:text-neutral-400" />
+              <span>View Inputs</span>
+            </button>
+
             <button
               onClick={() => setIsAddClassModalOpen(true)}
               className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
@@ -838,6 +859,11 @@ export const ClassesStage: React.FC = () => {
         isOpen={!!viewingClass}
         onClose={() => setViewingClass(null)}
         cls={viewingClass}
+      />
+
+      <SCDPInputsModal
+        isOpen={isInputsModalOpen}
+        onClose={() => setIsInputsModalOpen(false)}
       />
     </div>
   );
