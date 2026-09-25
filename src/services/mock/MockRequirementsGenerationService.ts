@@ -6,8 +6,9 @@ export class MockRequirementsGenerationService implements IRequirementsGeneratio
   async generateBusinessRequirement(
     highLevelInput: string,
     supportingDocs: SupportingDocument[],
-    onProgress?: ProgressCallback
-  ): Promise<string> {
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
+  ): Promise<{ resultText: string; runId: string }> {
     const steps = [
       { id: '1', label: 'Analyzing high-level business requirement', detail: 'Parsing core operational intent & domain scope' },
       { id: '2', label: 'Synthesizing detailed Business Requirement', detail: 'Formulating supplier advance calculations, FIFO matching & validation rules' },
@@ -35,7 +36,8 @@ export class MockRequirementsGenerationService implements IRequirementsGeneratio
     }
 
     if (highLevelInput && highLevelInput.trim().length > 0) {
-      return `DOMAIN: Accounts Payable (AP)
+      return {
+        resultText: `DOMAIN: Accounts Payable (AP)
 HLR: ${highLevelInput.trim()}
 
 Key Operational Capabilities:
@@ -43,15 +45,22 @@ Key Operational Capabilities:
 2. Maintenance of a real-time sub-ledger tracking advance balances by Supplier ID and Purchase Order ID.
 3. Automated matching routine and FIFO allocation logic for eligible pending supplier invoices.
 4. Validation rules preventing over-allocation beyond invoice totals or remaining advance balances.
-5. Immediate decrement of active advance pool balances and calculation of adjusted net payable amounts upon approval.`;
+5. Immediate decrement of active advance pool balances and calculation of adjusted net payable amounts upon approval.`,
+        runId: 'mock-run'
+      };
     }
 
-    return sampleBusinessInput.generatedBusinessRequirement || '';
+    return {
+      resultText: sampleBusinessInput.generatedBusinessRequirement || '',
+      runId: 'mock-run'
+    };
   }
 
   async generateRequirements(
     input: BusinessInput,
-    onProgress?: ProgressCallback
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
   ): Promise<RequirementsModel> {
     const steps = [
       { id: '1', label: 'Ingesting reviewed Business Requirement', detail: 'Parsing domain rules & document attachments' },

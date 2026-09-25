@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { FileText, Loader2, AlertCircle, X } from 'lucide-react';
+import { API_URL } from '../../services/api/config';
 
 interface InputFile {
   name: string;
@@ -28,8 +29,7 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
       setIsLoading(true);
       setError(null);
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-        const response = await fetch(`${apiUrl}/simulation/simulation-inputs`);
+        const response = await fetch(`${API_URL}/simulation/simulation-inputs`);
         if (!response.ok) {
           throw new Error(`Failed to fetch: ${response.statusText}`);
         }

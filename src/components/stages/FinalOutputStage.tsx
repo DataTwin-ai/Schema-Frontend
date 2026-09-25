@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { API_URL } from '../../services/api/config';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { 
   CheckCircle2, 
@@ -123,7 +124,7 @@ export const FinalOutputStage: React.FC = () => {
     setExecutionError(null);
     setExecutionResult(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
     
     // The current schema source of truth is either the edited one or the original generated one.
     let currentSchema = {};
@@ -136,7 +137,7 @@ export const FinalOutputStage: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${backendUrl}/api/execute-schema`, {
+      const response = await fetch(`${API_URL}/execute-schema`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

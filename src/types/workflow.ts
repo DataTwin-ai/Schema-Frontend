@@ -5,6 +5,7 @@ import { SchemaModel } from './schema';
 export type WorkflowStage =
   | 'business-input'
   | 'requirements'
+  | 'scdp-input'
   | 'classes'
   | 'schema'
   | 'output';
@@ -76,4 +77,7 @@ export interface SchemaGenerationWorkflow {
   generationStatus: GenerationStatus;
   currentProgressSteps: GenerationProgressStep[];
   updatedAt: string;
+  runId?: string;
+  lastError?: string;
+  caseName?: string;
 }

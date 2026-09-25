@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { API_URL } from '../../services/api/config';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { 
   FileText, 
@@ -43,8 +44,7 @@ export const BusinessInputStage: React.FC = () => {
     setIsKnowledgeLoading(true);
     setKnowledgeError(null);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-      const response = await fetch(`${apiUrl}/generate/hlr-knowledge`);
+      const response = await fetch(`${API_URL}/generate/hlr-knowledge`);
       if (!response.ok) {
         throw new Error(`Failed to load knowledge file: ${response.statusText}`);
       }
@@ -62,6 +62,8 @@ export const BusinessInputStage: React.FC = () => {
 
   const highLevelText = workflow.businessInput.highLevelRequirement || '';
   const generatedBRText = workflow.businessInput.generatedBusinessRequirement || '';
+
+
   const isGenerated = workflow.businessInput.isBusinessRequirementGenerated || generatedBRText.trim().length > 0;
   const isHighLevelValid = highLevelText.trim().length >= 5;
   const isGeneratedBRValid = generatedBRText.trim().length >= 20;

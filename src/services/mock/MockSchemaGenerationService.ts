@@ -6,7 +6,9 @@ export class MockSchemaGenerationService implements ISchemaGenerationService {
   async generateSchema(
     requirements: RequirementsModel,
     classes: SchemaClass[],
-    onProgress?: ProgressCallback
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
   ): Promise<SchemaModel> {
     const steps = [
       { id: '1', label: 'Transforming domain classes into PO Validation schema structure', detail: `Processing ${classes.length} active classes` },

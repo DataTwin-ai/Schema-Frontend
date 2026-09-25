@@ -21,6 +21,7 @@ export const sampleHistoryRecords: HistoryRecord[] = [
       title: 'Supplier Advance Allocation & Net Payable Schedule',
       domain: 'Accounts Payable (AP)',
       stage: 'output',
+      runStatus: 'COMPLETED',
       businessInput: {
         ...sampleBusinessInput,
         isBusinessRequirementGenerated: true,
@@ -50,6 +51,7 @@ export const sampleHistoryRecords: HistoryRecord[] = [
       title: 'Vendor Rebate & Settlement Engine',
       domain: 'Procure-to-Pay Vendor Operations',
       stage: 'schema',
+      runStatus: 'COMPLETED',
       businessInput: {
         highLevelRequirement: 'Calculate tiered volume vendor rebates on AP invoices, compute quarterly deduction schedules, and generate reconciliation adjustments against vendor master agreements.',
         generatedBusinessRequirement: `BUSINESS REQUIREMENT SPECIFICATION: VENDOR REBATE SETTLEMENT\n\n1. Scope:\nRebate computation across supplier purchase orders and delivered inventory batches.\n\n2. Tiers:\n- Tier 1 (<$500k): 1.5%\n- Tier 2 ($500k - $2M): 3.0%\n- Tier 3 (>$2M): 5.0% retroactive.\n\n3. Gating:\nZero discrepancy between procurement ledger and supplier invoice confirmations.`,
@@ -95,6 +97,7 @@ export const sampleHistoryRecords: HistoryRecord[] = [
       title: 'Tax Provision & Intercompany Allocation',
       domain: 'Global Tax and Intercompany Accounting',
       stage: 'classes',
+      runStatus: 'DRAFT',
       businessInput: {
         highLevelRequirement: 'Apportion centralized IT and HR shared service expenses to subsidiary legal entities applying statutory tax rates and a 5% transfer pricing markup.',
         generatedBusinessRequirement: `BUSINESS REQUIREMENT SPECIFICATION: INTERCOMPANY TAX PROVISION\n\n1. Entities:\nParent HQ and 6 operating subsidiaries.\n\n2. Markup:\n5% Arm's Length markup on baseline operating costs.\n\n3. Tax Resolution:\nApply state and country tax jurisdiction matrices based on delivery entity code.`,
@@ -126,6 +129,7 @@ export const sampleHistoryRecords: HistoryRecord[] = [
       title: 'Fixed Asset Depreciation & Lease Schedules',
       domain: 'Fixed Assets and Lease Accounting (ASC 842)',
       stage: 'requirements',
+      runStatus: 'DRAFT',
       businessInput: {
         highLevelRequirement: 'Generate monthly straight-line depreciation schedules for capital machinery and right-of-use lease assets.',
         generatedBusinessRequirement: `BUSINESS REQUIREMENT SPECIFICATION: FIXED ASSETS & LEASES\n\n1. Asset Classes:\nMachinery, Vehicles, IT Hardware, Office Leases.\n\n2. Methods:\nStraight-line over useful life (36 - 120 months) and MACRS 5-year.\n\n3. Accounting:\nDebit Depreciation Expense, Credit Accumulated Depreciation.`,

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
@@ -43,6 +43,7 @@ import { formatClassSpecification } from '../utils/classUtils';
 
 interface WorkflowContextValue {
   workflow: SchemaGenerationWorkflow;
+  setWorkflow: React.Dispatch<React.SetStateAction<SchemaGenerationWorkflow>>;
   setStage: (stage: WorkflowStage) => void;
   updateBusinessInput: (updates: Partial<BusinessInput>) => void;
   loadSampleInput: () => void;
@@ -143,7 +144,7 @@ interface WorkflowContextValue {
   resetWorkflow: () => void;
 
   // History Load
-  loadHistoricalSchemaForEdit: (jsonStr: string) => void;
+  loadHistoricalSchemaForEdit: (historyDetail: any) => void;
 
   setRunStatus: (status: RunStatus) => void;
 }
@@ -453,13 +454,37 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     setActiveView('generator');
   }, []);
 
-  const loadHistoricalSchemaForEdit = useCallback((jsonStr: string) => {
-    // Only update stage and json, do not wipe the current workflow.
+  const loadHistoricalSchemaForEdit = useCallback((historyDetail: any) => {
+    console.log('[HISTORY FE] Restoring schema:', !!historyDetail.schema);
+    
+    // Parse the schema
+    let parsedSchema = historyDetail.schema;
+    if (parsedSchema && parsedSchema.root) {
+      console.log('[HISTORY FE] Restored root count:', parsedSchema.root.length);
+    }
+    
+    // Load workflowState if available, otherwise just use basic data
+    const ws = historyDetail.workflowState || {};
+    
     setWorkflow((prev) => ({
       ...prev,
-      stage: 'schema'
+      id: historyDetail.runId || prev.id,
+      runStatus: historyDetail.status || prev.runStatus,
+      title: historyDetail.schemaGroupName || prev.title,
+      domain: historyDetail.schemaGroupName || prev.domain,
+      classes: parsedSchema?.root || prev.classes,
+      schema: parsedSchema || prev.schema,
+      stage: 'schema', // Always navigate to schema studio when opening a run, per reqs
+      businessInput: ws.businessInput || prev.businessInput,
+      additionalInformation: ws.additionalInformation || prev.additionalInformation,
+      additionalRequirements: ws.additionalRequirements || prev.additionalRequirements,
     }));
-    setEditedSchemaJson(jsonStr);
+    
+    if (parsedSchema) {
+      setEditedSchemaJson(JSON.stringify(parsedSchema, null, 2));
+    }
+    
+    console.log('[HISTORY FE] Navigating to: schema-studio');
     setActiveView('generator');
   }, []);
 
@@ -487,18 +512,18 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const generateBusinessRequirement = useCallback(async () => {
     setGenerationOperationLabel('Generating Business Requirement…');
     setIsGeneratingModalOpen(true);
-    setWorkflow((prev) => ({
+    setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
       generationStatus: 'generating',
       currentProgressSteps: [],
     }));
 
     try {
-      const generatedText = await requirementsService.generateBusinessRequirement(
+      const { resultText: generatedText, runId } = await requirementsService.generateBusinessRequirement(
         workflow.businessInput.highLevelRequirement,
         workflow.businessInput.supportingDocuments,
         (step: GenerationProgressStep) => {
-          setWorkflow((prev) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
             const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
             const newSteps = [...prev.currentProgressSteps];
             if (existingIdx >= 0) {
@@ -508,11 +533,25 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
             return { ...prev, currentProgressSteps: newSteps };
           });
+        },
+        (operationId: string) => {
+          setActiveOperation({
+            operationId,
+            type: 'generate-business-requirement',
+            status: 'RUNNING',
+            message: 'Generating Business Requirement…'
+          });
         }
       );
 
-      setWorkflow((prev) => ({
+
+            if (!generatedText || generatedText.trim() === '') {
+        throw new Error("Received empty generatedBusinessRequirement from service.");
+      }
+
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
+        runId,
         businessInput: {
           ...prev.businessInput,
           generatedBusinessRequirement: generatedText,
@@ -521,11 +560,20 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         generationStatus: 'completed',
         updatedAt: new Date().toISOString(),
       }));
-    } catch (err) {
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-    } finally {
-      setTimeout(() => setIsGeneratingModalOpen(false), 500);
+      if (err.message === "Another generation is running") {
+        alert("Another generation is running");
+        setIsGeneratingModalOpen(false);
+      } else if (err.name === 'StoppedError') {
+        alert("Generation stopped");
+        setIsGeneratingModalOpen(false);
+        setActiveOperation(null);
+      } else {
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+      }
     }
   }, [workflow.businessInput]);
 
@@ -533,7 +581,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const generateRequirements = useCallback(async () => {
     setGenerationOperationLabel('Generating Requirements…');
     setIsGeneratingModalOpen(true);
-    setWorkflow((prev) => ({
+    setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
       generationStatus: 'generating',
       currentProgressSteps: [],
@@ -542,51 +590,9 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const result = await requirementsService.generateRequirements(
         workflow.businessInput,
+        workflow.runId,
         (step: GenerationProgressStep) => {
-          setWorkflow((prev) => {
-            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
-            const newSteps = [...prev.currentProgressSteps];
-            if (existingIdx >= 0) {
-              newSteps[existingIdx] = step;
-            } else {
-              newSteps.push(step);
-            }
-            return { ...prev, currentProgressSteps: newSteps };
-          });
-        }
-      );
-
-      setWorkflow((prev) => ({
-        ...prev,
-        requirements: result,
-        stage: 'requirements',
-        generationStatus: 'completed',
-        updatedAt: new Date().toISOString(),
-      }));
-    } catch (err) {
-      console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-    } finally {
-      setTimeout(() => setIsGeneratingModalOpen(false), 500);
-    }
-  }, [workflow.businessInput]);
-
-  // Generation 3: Classes
-  const generateClasses = useCallback(async () => {
-    if (!workflow.requirements) return;
-    setGenerationOperationLabel('Generating Schema Classes…');
-    setIsGeneratingModalOpen(true);
-    setWorkflow((prev) => ({
-      ...prev,
-      generationStatus: 'generating',
-      currentProgressSteps: [],
-    }));
-
-    try {
-      const result = await classService.generateClasses(
-        workflow.requirements,
-        (step: GenerationProgressStep) => {
-          setWorkflow((prev) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
             const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
             const newSteps = [...prev.currentProgressSteps];
             if (existingIdx >= 0) {
@@ -597,8 +603,74 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             return { ...prev, currentProgressSteps: newSteps };
           });
         },
-                (operationId: string) => {
-          setActiveOperation({ operationId, status: 'RUNNING', operationType: 'CLASSES' });
+        (operationId: string) => {
+          setActiveOperation({
+            operationId,
+            type: 'generate-requirements',
+            status: 'RUNNING',
+            message: 'Generating Requirements…'
+          });
+        }
+      );
+
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
+        ...prev,
+        requirements: result,
+        stage: 'requirements',
+        generationStatus: 'completed',
+        updatedAt: new Date().toISOString(),
+      }));
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
+      console.error(err);
+      if (err.message === "Another generation is running") {
+        alert("Another generation is running");
+        setIsGeneratingModalOpen(false);
+      } else if (err.name === 'StoppedError') {
+        alert("Generation stopped");
+        setIsGeneratingModalOpen(false);
+        setActiveOperation(null);
+      } else {
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+      }
+    }
+  }, [workflow.businessInput]);
+
+  // Generation 3: Classes
+  const generateClasses = useCallback(async () => {
+    if (!workflow.requirements) return;
+    setGenerationOperationLabel('Generating Schema Classes…');
+    setIsGeneratingModalOpen(true);
+    setWorkflow((prev: SchemaGenerationWorkflow) => ({
+      ...prev,
+      generationStatus: 'generating',
+      currentProgressSteps: [],
+    }));
+
+    try {
+      const result = await classService.generateClasses(
+        workflow.requirements,
+        workflow.runId,
+        (step: GenerationProgressStep) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
+            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
+            const newSteps = [...prev.currentProgressSteps];
+            if (existingIdx >= 0) {
+              newSteps[existingIdx] = step;
+            } else {
+              newSteps.push(step);
+            }
+            return { ...prev, currentProgressSteps: newSteps };
+          });
+        },
+        (operationId: string) => {
+          setActiveOperation({
+            operationId,
+            type: 'generate-classes',
+            status: 'RUNNING',
+            message: 'Generating Schema Classes…'
+          });
         }
       );
 
@@ -606,18 +678,27 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         throw new Error("No classes generated");
       }
 
-      setWorkflow((prev) => ({
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         classes: result,
         stage: 'classes',
         generationStatus: 'completed',
         updatedAt: new Date().toISOString(),
       }));
-    } catch (err) {
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-    } finally {
-      setTimeout(() => setIsGeneratingModalOpen(false), 500);
+      if (err.message === "Another generation is running") {
+        alert("Another generation is running");
+        setIsGeneratingModalOpen(false);
+      } else if (err.name === 'StoppedError') {
+        alert("Generation stopped");
+        setIsGeneratingModalOpen(false);
+        setActiveOperation(null);
+      } else {
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+      }
     }
   }, [workflow.requirements]);
 
@@ -626,7 +707,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (!workflow.requirements || !workflow.classes) return;
     setGenerationOperationLabel('Generating Schema…');
     setIsGeneratingModalOpen(true);
-    setWorkflow((prev) => ({
+    setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
       generationStatus: 'generating',
       currentProgressSteps: [],
@@ -636,8 +717,9 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       const result = await schemaService.generateSchema(
         workflow.requirements,
         workflow.classes,
+        workflow.runId,
         (step: GenerationProgressStep) => {
-          setWorkflow((prev) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
             const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
             const newSteps = [...prev.currentProgressSteps];
             if (existingIdx >= 0) {
@@ -648,12 +730,17 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             return { ...prev, currentProgressSteps: newSteps };
           });
         },
-                (operationId: string) => {
-          setActiveOperation({ operationId, status: 'RUNNING', operationType: 'SCHEMA' });
+        (operationId: string) => {
+          setActiveOperation({
+            operationId,
+            type: 'generate-schema',
+            status: 'RUNNING',
+            message: 'Generating Schema…'
+          });
         }
       );
 
-      setWorkflow((prev) => ({
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         schema: result,
         stage: 'schema',
@@ -661,11 +748,20 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         updatedAt: new Date().toISOString(),
       }));
       setEditedSchemaJson(result.rawJson);
-    } catch (err) {
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
       console.error(err);
-      setWorkflow((prev) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-    } finally {
-      setTimeout(() => setIsGeneratingModalOpen(false), 500);
+      if (err.message === "Another generation is running") {
+        alert("Another generation is running");
+        setIsGeneratingModalOpen(false);
+      } else if (err.name === 'StoppedError') {
+        alert("Generation stopped");
+        setIsGeneratingModalOpen(false);
+        setActiveOperation(null);
+      } else {
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+      }
     }
   }, [workflow.requirements, workflow.classes]);
 
@@ -1091,6 +1187,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     <WorkflowContext.Provider
       value={{
         workflow,
+        setWorkflow,
         setStage,
         setRunStatus,
         updateBusinessInput,

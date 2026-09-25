@@ -1,18 +1,15 @@
 import { ISchemaGenerationService, ProgressCallback } from '../interfaces';
 import { RequirementsModel, SchemaClass, SchemaModel, SchemaTreeNode, SchemaValidationResult } from '../../types';
 
-const POLL_INTERVAL_MS = 1500;
+import { API_URL } from './config';
+import { pollOperation } from './pollOperation';
 
 export class ApiSchemaGenerationService implements ISchemaGenerationService {
-  private apiUrl: string;
-
-  constructor(apiUrl?: string) {
-    this.apiUrl = apiUrl || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-  }
 
   async generateSchema(
     requirements: RequirementsModel,
     classes: SchemaClass[],
+    runId?: string,
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void
   ): Promise<SchemaModel> {
@@ -20,13 +17,16 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       onProgress({ id: 'schema-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate schema request' });
     }
 
-    const response = await fetch(`${this.apiUrl}/generate/schema`, {
+    const response = await fetch(`${API_URL}/generate/schema`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requirements, classes }),
+      body: JSON.stringify({ requirements, classes, runId }),
     });
 
     if (!response.ok) {
+      if (response.status === 409) {
+        throw new Error("Another generation is running");
+      }
       throw new Error(`Failed to generate schema: ${response.statusText}`);
     }
 
@@ -37,32 +37,9 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       const operationId: string = initData.operationId;
       if (onOperationStarted) onOperationStarted(operationId);
 
-      while (true) {
-        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-
-        const baseUrl = this.apiUrl.endsWith('/api') ? this.apiUrl.slice(0, -4) : this.apiUrl;
-        const statusRes = await fetch(`${baseUrl}/api/operations/${operationId}/status`);
-        if (!statusRes.ok) throw new Error('Failed to poll operation status');
-
-        const statusData = await statusRes.json();
-
-        if (onProgress) {
-          onProgress({
-            id: 'schema-progress',
-            status: 'active',
-            label: `Generating Schema... (${statusData.status})`,
-            detail: statusData.progress ? `Step ${statusData.progress.current} of ${statusData.progress.total}` : '',
-          });
-        }
-
-        if (statusData.status === 'COMPLETED') {
-          const rawSchema = statusData.schema || statusData.result || statusData;
-          return this.buildSchemaModel(rawSchema, classes);
-        }
-
-        if (statusData.status === 'STOPPED') throw new Error('Schema generation was stopped by user');
-        if (statusData.status === 'FAILED') throw new Error(statusData.error || 'Schema generation failed');
-      }
+      const statusData = await pollOperation(operationId, onProgress);
+      const rawSchema = statusData.schema || statusData.result || statusData;
+      return this.buildSchemaModel(rawSchema, classes);
     }
 
     // Legacy synchronous fallback

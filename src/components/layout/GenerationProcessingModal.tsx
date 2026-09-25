@@ -3,6 +3,7 @@
 import React, { useEffect, useCallback } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { Loader2, Pause, Play, Square, XCircle, AlertCircle, CheckCircle } from 'lucide-react';
+import { API_URL } from '../../services/api/config';
 
 export interface GenerationProcessingModalProps {
   isOpen?: boolean;
@@ -17,7 +18,6 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
 }) => {
   const { isGeneratingModalOpen, generationOperationLabel, workflow, activeOperation, setActiveOperation, closeGeneratingModal } = useWorkflow();
 
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   const isOpen = propIsOpen !== undefined ? propIsOpen : isGeneratingModalOpen;
 
@@ -29,7 +29,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
       if (['COMPLETED', 'FAILED', 'STOPPED'].includes(activeOperation.status)) return;
       
       try {
-        const res = await fetch(`${backendUrl}/api/operations/${activeOperation.operationId}`);
+        const res = await fetch(`${API_URL}/operations/${activeOperation.operationId}/status`);
         if (res.ok) {
           const data = await res.json();
           // Update only if it changed to prevent constant re-renders
@@ -55,7 +55,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
     }
     
     return () => clearTimeout(timeoutId);
-  }, [isOpen, activeOperation, backendUrl, setActiveOperation, closeGeneratingModal]);
+  }, [isOpen, activeOperation, setActiveOperation, closeGeneratingModal]);
 
   if (!isOpen) return null;
 
@@ -67,10 +67,10 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
       if (action === 'resume') setActiveOperation({ ...activeOperation, status: 'RESUME_REQUESTED' });
       if (action === 'stop') setActiveOperation({ ...activeOperation, status: 'STOP_REQUESTED' });
 
-      await fetch(`${backendUrl}/api/operations/${activeOperation.operationId}/${action}`, { method: 'POST' });
+      await fetch(`${API_URL}/operations/${activeOperation.operationId}/${action}`, { method: 'POST' });
 
       // Immediately poll for the updated status
-      const res = await fetch(`${backendUrl}/api/operations/${activeOperation.operationId}`);
+      const res = await fetch(`${API_URL}/operations/${activeOperation.operationId}/status`);
       if (res.ok) {
         const data = await res.json();
         setActiveOperation(data);

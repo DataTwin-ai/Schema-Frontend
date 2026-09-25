@@ -5,7 +5,9 @@ import { sampleSchemaClasses } from '../../fixtures';
 export class MockClassGenerationService implements IClassGenerationService {
   async generateClasses(
     requirements: RequirementsModel,
-    onProgress?: ProgressCallback
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
   ): Promise<SchemaClass[]> {
     const steps = [
       { id: '1', label: 'Analyzing requirement layers & grain definitions', detail: 'Evaluating requirements against master datasources PO_I, CA, AP' },

@@ -1,4 +1,4 @@
-﻿import {
+import {
   BusinessInput,
   RequirementsModel,
   SchemaClass,
@@ -23,28 +23,19 @@ export interface IRequirementsGenerationService {
   generateBusinessRequirement(
     highLevelInput: string,
     supportingDocs: SupportingDocument[],
-    onProgress?: ProgressCallback
-  ): Promise<string>;
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void
+  ): Promise<{ resultText: string; runId: string }>;
 
-  generateRequirements(
-    input: BusinessInput,
-    onProgress?: ProgressCallback
-  ): Promise<RequirementsModel>;
+  generateRequirements(input: BusinessInput, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<RequirementsModel>;
 }
 
 export interface IClassGenerationService {
-  generateClasses(
-    requirements: RequirementsModel,
-    onProgress?: ProgressCallback
-  ): Promise<SchemaClass[]>;
+  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<SchemaClass[]>;
 }
 
 export interface ISchemaGenerationService {
-  generateSchema(
-    requirements: RequirementsModel,
-    classes: SchemaClass[],
-    onProgress?: ProgressCallback
-  ): Promise<SchemaModel>;
+  generateSchema(requirements: RequirementsModel, classes: SchemaClass[], runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<SchemaModel>;
 }
 
 export interface IAssistantService {

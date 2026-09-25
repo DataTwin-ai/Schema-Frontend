@@ -17,7 +17,8 @@ import {
   Check,
   History as HistoryIcon,
   Clock,
-  Paperclip
+  Paperclip,
+  Loader2
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
 import { RequirementVersion } from '../../types';
@@ -26,6 +27,7 @@ import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffVie
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { AddNewBusinessRequirementModal } from '../common/AddNewBusinessRequirementModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import { API_URL } from '../../services/api/config';
 
 interface RequirementItem {
   id: string;
@@ -214,15 +216,6 @@ const RequirementRow: React.FC<RequirementRowProps> = ({
                   <span>History</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={onStartEdit}
-                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white bg-neutral-100/80 hover:bg-neutral-200/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 transition-colors flex items-center space-x-1 cursor-pointer shadow-2xs"
-                  title="Edit requirement"
-                >
-                  <Edit3 className="h-3 w-3" />
-                  <span>Edit</span>
-                </button>
               </div>
             )}
           </div>
@@ -388,6 +381,7 @@ export const RequirementsStage: React.FC = () => {
   const { 
     workflow, 
     setStage,
+    setWorkflow,
     getRequirementVersions,
     updateProblemStatement, 
     updateBusinessObjective, 
@@ -427,12 +421,61 @@ export const RequirementsStage: React.FC = () => {
   // Generate with info modal
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
 
-  if (!req) {
+  const [isLoading, setIsLoading] = useState(!req);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchReqs = async () => {
+      if (workflow.requirements) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+      if (!workflow.runId) {
+        if (isMounted) {
+          setIsLoading(false);
+          setError("No requirements generated yet and no run ID found.");
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setIsLoading(true);
+        setError(null);
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/runs/${workflow.runId}/requirements`);
+        if (!res.ok) throw new Error(`Failed to load requirements (status ${res.status})`);
+        const data = await res.json();
+        if (isMounted) {
+          setWorkflow((prev: any) => ({ ...prev, requirements: data.result || data }));
+        }
+      } catch (err: any) {
+        if (isMounted) setError(err.message);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchReqs();
+    return () => { isMounted = false; };
+  }, [workflow.requirements, workflow.runId, setWorkflow]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col min-h-full items-center justify-center space-y-4">
+        <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+        <p className="text-xs text-neutral-500">Loading requirements...</p>
+      </div>
+    );
+  }
+
+  if (error || !req) {
     return (
       <div className="flex flex-col min-h-full">
         <StageActionBar
           title="Structured Requirements"
-          description="Requirements not yet generated."
+          description="Requirements not yet generated or failed to load."
           leftActions={
             <button
               onClick={() => setStage('business-input')}
@@ -444,7 +487,11 @@ export const RequirementsStage: React.FC = () => {
           }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No requirements generated yet. Please return to the Business Input stage.</p>
+          {error ? (
+            <p className="text-xs text-rose-500 mb-4">{error}</p>
+          ) : (
+            <p className="text-xs">No requirements generated yet. Please return to the Business Input stage.</p>
+          )}
           <button
             onClick={() => setStage('business-input')}
             className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold"
@@ -482,18 +529,10 @@ export const RequirementsStage: React.FC = () => {
         rightActions={
           <>
             <button
-              onClick={() => setIsAddReqModalOpen(true)}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5 text-neutral-600 dark:text-neutral-400" />
-              <span>Add New Business Requirement</span>
-            </button>
-
-            <button
-              onClick={() => setIsGenerateModalOpen(true)}
+              onClick={() => setStage('scdp-input')}
               className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
-              <span>Generate Classes</span>
+              <span>Proceed to SCDP Input</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </>
@@ -612,12 +651,6 @@ export const RequirementsStage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => removeAdditionalInformation(info.id)}
-                    className="text-neutral-400 hover:text-rose-500 shrink-0 p-1 transition-colors"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
                 </div>
               ))}
             </div>

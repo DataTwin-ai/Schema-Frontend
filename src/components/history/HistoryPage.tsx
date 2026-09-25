@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { API_URL } from '../../services/api/config';
 import { 
   History as HistoryIcon, 
   Search, 
@@ -52,14 +53,13 @@ export const HistoryPage: React.FC = () => {
   
   const [selectedRun, setSelectedRun] = useState<HistoryManifest | null>(null);
 
-  // Define dynamic backend URL
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 
   const fetchHistory = async () => {
     setIsLoading(true);
     setIsError(false);
     
-    const requestUrl = `${backendUrl}/api/history`;
+    const requestUrl = `${API_URL}/history`;
     console.log(`[HISTORY FE] Loading history from: ${requestUrl}`);
     
     try {
@@ -95,7 +95,7 @@ export const HistoryPage: React.FC = () => {
             const scdpFiles = run.outputs.scdpSchemaOutput;
             const targetFile = scdpFiles.find(f => f.includes('SCDP_Generated_Schema')) || scdpFiles[0];
             
-            const res = await fetch(`${backendUrl}/api/history/${run.runId}/file/SCDP_SCHEMA_OUTPUT/${encodeURIComponent(targetFile)}`);
+            const res = await fetch(`${API_URL}/history/${run.runId}/file/SCDP_SCHEMA_OUTPUT/${encodeURIComponent(targetFile)}`);
             if (res.ok) {
               const text = await res.text();
               const json = JSON.parse(text);
@@ -143,13 +143,13 @@ export const HistoryPage: React.FC = () => {
     if (runs.length > 0) {
       fetchMetadataForRuns();
     }
-  }, [runs, backendUrl]);
+  }, [runs]);
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (confirm('Delete this saved schema history?')) {
       try {
-        const res = await fetch(`${backendUrl}/api/history/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${API_URL}/history/${id}`, { method: 'DELETE' });
         if (res.ok) {
           setRuns(prev => prev.filter(r => r.runId !== id));
           if (selectedRun?.runId === id) setSelectedRun(null);
@@ -163,30 +163,29 @@ export const HistoryPage: React.FC = () => {
     }
   };
 
+
+
+
   const handleOpenEdit = async (e: React.MouseEvent, run: HistoryManifest) => {
     e.stopPropagation();
-    const scdpFiles = run.outputs?.scdpSchemaOutput || [];
-    const targetFile = scdpFiles.find(f => f.includes('SCDP_Generated_Schema')) || scdpFiles[0];
+    console.log(`[HISTORY FE] Opening run:\n${run.runId}`);
     
-    if (!targetFile) {
-      alert("No SCDP schema output found for this run.");
-      return;
-    }
-
     try {
-      const res = await fetch(`${backendUrl}/api/history/${run.runId}/file/SCDP_SCHEMA_OUTPUT/${encodeURIComponent(targetFile)}`);
+      const res = await fetch(`${API_URL}/history/${run.runId}`);
       if (res.ok) {
-        const text = await res.text();
-        loadHistoricalSchemaForEdit(text);
+        const data = await res.json();
+        console.log('[HISTORY FE] History detail received:', data);
+        loadHistoricalSchemaForEdit(data);
       } else {
-        alert("Failed to load historical schema JSON.");
+        const errText = await res.text();
+        console.error('Failed to load history run:', errText);
+        alert(`Failed to load historical schema JSON: ${errText}`);
       }
     } catch (err) {
       console.error(err);
-      alert("Error loading schema.");
+      alert('Error loading schema.');
     }
   };
-
   const filteredRecords = runs.filter((r) => {
     const meta = metadataCache[r.runId];
     const title = meta?.title || r.runId;
@@ -375,4 +374,6 @@ export const HistoryPage: React.FC = () => {
       </div>
     </div>
   );
+;
+
 };
