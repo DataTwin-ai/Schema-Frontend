@@ -14,8 +14,8 @@ interface StageConfig {
 const stages: StageConfig[] = [
   { id: 'business-input', number: 1, label: 'Business Input' },
   { id: 'requirements', number: 2, label: 'Requirements' },
-  { id: 'classes', number: 3, label: 'Domain Classes' },
-  { id: 'schema', number: 4, label: 'Schema Studio' },
+  { id: 'scdp-input', number: 3, label: 'SCDP Input' },
+  { id: 'schema', number: 4, label: 'Schema Output' },
   { id: 'output', number: 5, label: 'Final Output' },
 ];
 
@@ -25,7 +25,7 @@ export const WorkflowNavigation: React.FC = () => {
   const isStageAccessible = (stageId: WorkflowStage) => {
     if (stageId === 'business-input') return true;
     if (stageId === 'requirements') return !!workflow.requirements;
-    if (stageId === 'classes') return !!workflow.classes;
+    if (stageId === 'scdp-input') return !!workflow.requirements;
     if (stageId === 'schema') return !!workflow.schema;
     if (stageId === 'output') return !!workflow.schema;
     return false;
@@ -33,7 +33,7 @@ export const WorkflowNavigation: React.FC = () => {
 
   const isStageCompleted = (stageIdx: number) => {
     if (stageIdx === 0) return !!workflow.requirements;
-    if (stageIdx === 1) return !!workflow.classes;
+    if (stageIdx === 1) return !!workflow.requirements && (workflow.stage === 'scdp-input' || workflow.stage === 'schema' || workflow.stage === 'output' || !!workflow.schema);
     if (stageIdx === 2) return !!workflow.schema;
     if (stageIdx === 3) return !!workflow.schema && workflow.stage === 'output';
     if (stageIdx === 4) return false;

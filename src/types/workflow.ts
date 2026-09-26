@@ -6,7 +6,8 @@ export type WorkflowStage =
   | 'business-input'
   | 'requirements'
   | 'scdp-input'
-  | 'classes'
+  | 'scdp-input'
+
   | 'schema'
   | 'output';
 

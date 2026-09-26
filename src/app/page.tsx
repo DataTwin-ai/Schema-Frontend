@@ -10,7 +10,7 @@ import { WorkflowNavigation } from '../components/layout/WorkflowNavigation';
 import { GenerationModal } from '../components/layout/GenerationModal';
 import { BusinessInputStage } from '../components/stages/BusinessInputStage';
 import { RequirementsStage } from '../components/stages/RequirementsStage';
-import { ClassesStage } from '../components/stages/ClassesStage';
+import { ScdpInputStage } from '../components/stages/ScdpInputStage';
 import { SchemaStudioStage } from '../components/stages/SchemaStudioStage';
 import { FinalOutputStage } from '../components/stages/FinalOutputStage';
 import { AssistantPanel } from '../components/assistant/AssistantPanel';
@@ -39,8 +39,8 @@ export default function Home() {
         return <BusinessInputStage />;
       case 'requirements':
         return <RequirementsStage />;
-      case 'classes':
-        return <ClassesStage />;
+      case 'scdp-input':
+        return <ScdpInputStage />;
       case 'schema':
         return <SchemaStudioStage />;
       case 'output':

@@ -89,7 +89,6 @@ interface WorkflowContextValue {
   // Generation methods
   generateBusinessRequirement: () => Promise<void>;
   generateRequirements: () => Promise<void>;
-  generateClasses: () => Promise<void>;
   generateSchema: () => Promise<void>;
   isGeneratingModalOpen: boolean;
   closeGeneratingModal: () => void;
@@ -638,69 +637,6 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [workflow.businessInput]);
 
   // Generation 3: Classes
-  const generateClasses = useCallback(async () => {
-    if (!workflow.requirements) return;
-    setGenerationOperationLabel('Generating Schema Classes…');
-    setIsGeneratingModalOpen(true);
-    setWorkflow((prev: SchemaGenerationWorkflow) => ({
-      ...prev,
-      generationStatus: 'generating',
-      currentProgressSteps: [],
-    }));
-
-    try {
-      const result = await classService.generateClasses(
-        workflow.requirements,
-        workflow.runId,
-        (step: GenerationProgressStep) => {
-          setWorkflow((prev: SchemaGenerationWorkflow) => {
-            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
-            const newSteps = [...prev.currentProgressSteps];
-            if (existingIdx >= 0) {
-              newSteps[existingIdx] = step;
-            } else {
-              newSteps.push(step);
-            }
-            return { ...prev, currentProgressSteps: newSteps };
-          });
-        },
-        (operationId: string) => {
-          setActiveOperation({
-            operationId,
-            type: 'generate-classes',
-            status: 'RUNNING',
-            message: 'Generating Schema Classes…'
-          });
-        }
-      );
-
-      if (!result || result.length === 0) {
-        throw new Error("No classes generated");
-      }
-
-      setWorkflow((prev: SchemaGenerationWorkflow) => ({
-        ...prev,
-        classes: result,
-        stage: 'classes',
-        generationStatus: 'completed',
-        updatedAt: new Date().toISOString(),
-      }));
-      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
-    } catch (err: any) {
-      console.error(err);
-      if (err.message === "Another generation is running") {
-        alert("Another generation is running");
-        setIsGeneratingModalOpen(false);
-      } else if (err.name === 'StoppedError') {
-        alert("Generation stopped");
-        setIsGeneratingModalOpen(false);
-        setActiveOperation(null);
-      } else {
-        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
-      }
-    }
-  }, [workflow.requirements]);
 
   // Generation 4: Schema
   const generateSchema = useCallback(async () => {
@@ -1218,7 +1154,6 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         generationCost,
         generateBusinessRequirement,
         generateRequirements,
-        generateClasses,
         generateSchema,
         isGeneratingModalOpen,
         closeGeneratingModal,
