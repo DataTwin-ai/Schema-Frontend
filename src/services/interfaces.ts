@@ -31,11 +31,11 @@ export interface IRequirementsGenerationService {
 }
 
 export interface IClassGenerationService {
-  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<SchemaClass[]>;
+  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[]): Promise<SchemaClass[]>;
 }
 
 export interface ISchemaGenerationService {
-  generateSchema(requirements: RequirementsModel, classes: SchemaClass[], runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<SchemaModel>;
+  generateSchema(requirements: RequirementsModel, classes: SchemaClass[], runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[]): Promise<SchemaModel>;
 }
 
 export interface IAssistantService {

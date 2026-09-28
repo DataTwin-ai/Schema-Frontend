@@ -227,6 +227,24 @@ export const DomainClassOutputViewer: React.FC<DomainClassOutputViewerProps> = (
           </table>
         </div>
       </div>
+
+      {cls.rawText && (
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-2xs mt-4">
+          <div className="px-4 py-3 bg-neutral-50 dark:bg-neutral-950 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+            <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200 uppercase tracking-wider flex items-center space-x-2">
+              <span className="bg-neutral-200 dark:bg-neutral-800 p-1 rounded">
+                <FileText className="h-3.5 w-3.5 text-neutral-600 dark:text-neutral-400" />
+              </span>
+              <span>{String(cls.metadata?.fileName || 'Prompt File')}</span>
+            </h4>
+          </div>
+          <div className="p-4 overflow-x-auto bg-[#0d0d0d]">
+            <pre className="text-[10px] font-mono text-neutral-300 leading-relaxed whitespace-pre-wrap break-words">
+              {cls.rawText}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

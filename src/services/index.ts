@@ -45,3 +45,5 @@ export const requirementHistoryService: IRequirementHistoryService = new MockReq
 export const classHistoryService: IClassHistoryService = new MockClassHistoryService();
 export const schemaHistoryService: ISchemaHistoryService = new MockSchemaHistoryService();
 
+
+export * from './api/ApiSchemaStudioService';

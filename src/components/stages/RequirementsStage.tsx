@@ -529,10 +529,10 @@ export const RequirementsStage: React.FC = () => {
         rightActions={
           <>
             <button
-              onClick={() => setStage('scdp-input')}
+              onClick={generateClasses}
               className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
-              <span>Proceed to SCDP Input</span>
+              <span>Generate Classes</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </>

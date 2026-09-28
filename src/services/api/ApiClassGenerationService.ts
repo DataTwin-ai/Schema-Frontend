@@ -10,7 +10,8 @@ export class ApiClassGenerationService implements IClassGenerationService {
     requirements: RequirementsModel,
     runId?: string,
     onProgress?: ProgressCallback,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    additionalRequirements?: string[]
   ): Promise<SchemaClass[]> {
     if (onProgress) {
       onProgress({ id: 'class-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate classes request' });
@@ -19,7 +20,7 @@ export class ApiClassGenerationService implements IClassGenerationService {
     const response = await fetch(`${API_URL}/generate/classes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requirements, runId }),
+      body: JSON.stringify({ requirements, runId, additionalRequirements }),
     });
 
     if (!response.ok) {
@@ -85,7 +86,11 @@ export class ApiClassGenerationService implements IClassGenerationService {
       exposes: rawClass.exposes || [],
       reviewPoints: rawClass.review_points || rawClass.reviewPoints || '',
       associatedRequirements: rawClass.associated_requirements || rawClass.associatedRequirements || [],
-      metadata: rawClass.metadata || {},
+      metadata: {
+        ...(rawClass.metadata || {}),
+        fileName: rawClass.metadata?.fileName || rawClass.metadata?.file_name || rawClass.fileName || rawClass.file_name,
+        promptHash: rawClass.metadata?.promptHash || rawClass.metadata?.prompt_hash || rawClass.promptHash || rawClass.prompt_hash
+      },
       isCustomAdded: rawClass.isCustomAdded || false,
       rawText: rawClass.rawText ?? rawClass.raw_text,
     } as SchemaClass));

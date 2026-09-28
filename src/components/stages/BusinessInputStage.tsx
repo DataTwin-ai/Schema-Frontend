@@ -146,7 +146,7 @@ export const BusinessInputStage: React.FC = () => {
                 className="flex items-center space-x-1 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer font-sans text-xs font-bold text-neutral-900 dark:text-neutral-100"
               >
                 <Eye className="h-3.5 w-3.5" />
-                <span>View Knowledge Used for HLR</span>
+                <span>View Staged Inputs</span>
               </button>
               <span>{highLevelText.length} chars</span>
               {highLevelText && (
@@ -194,9 +194,18 @@ export const BusinessInputStage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => updateBusinessInput({ generatedBusinessRequirement: '' })}
-                  className="hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                  className="hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer mr-2"
                 >
                   Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={generateRequirements}
+                  disabled={!isGeneratedBRValid || isGeneratingModalOpen}
+                  className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
+                >
+                  <span>Next</span>
+                  <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
             </div>

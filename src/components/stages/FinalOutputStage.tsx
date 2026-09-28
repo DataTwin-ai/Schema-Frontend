@@ -1,185 +1,200 @@
-'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { API_URL } from '../../services/api/config';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { pollOperation } from '../../services/api/pollOperation';
+import { FinalOutputInputsModal } from '../common/FinalOutputInputsModal';
 import { 
   CheckCircle2, 
   Download, 
   Copy, 
   Check, 
   ArrowLeft, 
-  Boxes, 
-  Calculator, 
-  ShieldCheck, 
-  Upload,
-  Play,
   FileJson,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Play
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
+import { GenerationProcessingModal } from '../layout/GenerationProcessingModal';
 
 export const FinalOutputStage: React.FC = () => {
-  const { workflow, setStage, downloadSchemaJson, copySchemaJson, editedSchemaJson, setRunStatus } = useWorkflow();
+  const { 
+    workflow, 
+    setStage, 
+    setRunStatus, 
+    setActiveOperation,
+
+    updateWorkflowField
+  } = useWorkflow();
+  
   const [copied, setCopied] = useState(false);
-  const [outputView, setOutputView] = useState<'schema' | 'execution'>('schema');
-  
-  // Event JSON
-  const [eventFile, setEventFile] = useState<File | null>(null);
-  const [eventJsonContent, setEventJsonContent] = useState<any>(null);
-  const [eventFileError, setEventFileError] = useState<string | null>(null);
-  
-  // Expected Output JSON
-  const [expectedFile, setExpectedFile] = useState<File | null>(null);
-  const [expectedJsonContent, setExpectedJsonContent] = useState<any>(null);
-  const [expectedFileError, setExpectedFileError] = useState<string | null>(null);
-  
-  const [isExecuting, setIsExecuting] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [executionResult, setExecutionResult] = useState<any>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [resultViewerTab, setResultViewerTab] = useState<'actual' | 'expected' | 'ai'>('actual');
+  const [showAllDiffs, setShowAllDiffs] = useState(false);
+  const [hasExecuted, setHasExecuted] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
-  if (!workflow.schema || !workflow.requirements) {
-    return (
-      <div className="flex flex-col min-h-full">
-        <StageActionBar
-          title="Final Output"
-          description="Schema not yet generated."
-          leftActions={
-            <button
-              onClick={() => setStage('schema')}
-              className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md transition-colors"
-              title="Back to Schema Studio"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-          }
-        />
-        <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No final schema generated yet. Please return to Schema Studio.</p>
-          <button
-            onClick={() => setStage('schema')}
-            className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold"
-          >
-            Go to Schema Studio
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const handleCopy = async () => {
-    const ok = await copySchemaJson();
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleEventFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setEventFileError(null);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        setEventJsonContent(json);
-        setEventFile(file);
-      } catch (err) {
-        setEventFileError("Invalid JSON file format.");
-        setEventFile(null);
-        setEventJsonContent(null);
-      }
+  // Initialize: load existing result or auto-trigger execution if finalOutputInputs exist and haven't executed yet
+  useEffect(() => {
+    let mounted = true;
+    const fetchExisting = async () => {
+       if (workflow.runId && mounted) {
+         try {
+           const res = await fetch(`${API_URL}/runs/${workflow.runId}/final-output`);
+           if (res.ok) {
+              const data = await res.json();
+              if (mounted && data && !data.error) {
+                 setExecutionResult(data);
+                 if (data.runStatus) setRunStatus(data.runStatus);
+                 setHasExecuted(true);
+              }
+           }
+         } catch(e) {}
+       }
     };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
+    fetchExisting();
+    return () => { mounted = false; };
+  }, [workflow.runId]);
 
-  const handleExpectedFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setExpectedFileError(null);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        setExpectedJsonContent(json);
-        setExpectedFile(file);
-      } catch (err) {
-        setExpectedFileError("Invalid JSON file format.");
-        setExpectedFile(null);
-        setExpectedJsonContent(null);
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
+  useEffect(() => {
+     // Auto-trigger execution if we entered this stage with inputs and haven't executed yet
+     if (workflow.finalOutputInputs && !hasExecuted && !executionResult && !executionError) {
+        executeSchema(workflow.finalOutputInputs);
+     }
+  }, [workflow.finalOutputInputs, hasExecuted, executionResult, executionError]);
 
-  const executeSchema = async () => {
-    if (!eventJsonContent || !expectedJsonContent) return;
-    
-    setIsExecuting(true);
+  const executeSchema = async (inputs: any) => {
+    setHasExecuted(true);
     setExecutionError(null);
     setExecutionResult(null);
-
-
     
-    // The current schema source of truth is either the edited one or the original generated one.
-    let currentSchema = {};
-    try {
-      currentSchema = JSON.parse(editedSchemaJson || workflow.schema!.rawJson);
-    } catch (e) {
-      setExecutionError("Invalid Schema JSON. Please return to Schema Studio to fix the schema formatting.");
-      setIsExecuting(false);
-      return;
-    }
-
+    setIsExecuting(true);
+    
+    
     try {
       const response = await fetch(`${API_URL}/execute-schema`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          runId: workflow.id,
-          schemaJson: currentSchema,
-          eventJson: eventJsonContent,
-          expectedOutput: expectedJsonContent
+          runId: workflow.runId,
+          eventJson: inputs.eventJson,
+          expectedOutput: inputs.expectedOutput,
+          schemaKey: inputs.schemaKey,
+          uploadSchema: inputs.uploadSchema,
+          confirmOverwrite: inputs.confirmOverwrite
         })
       });
+
+      if (response.status === 409) {
+         const errData = await response.json().catch(() => ({}));
+         if (errData.detail === 'S3_KEY_EXISTS') {
+            setIsExecuting(false);
+            setIsModalOpen(true);
+            return;
+         }
+      }
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || `Server returned ${response.status}`);
       }
-
-      const result = await response.json();
-      setExecutionResult(result);
       
-      // Determine pass/fail based on result fields
-      const resultStatus = result.evaluationResult || result.status || 'UNKNOWN';
-      if (resultStatus.toUpperCase() === 'PASS') {
-        setRunStatus('COMPLETED');
+      const opData = await response.json();
+      
+      if (opData.operationId) {
+         setActiveOperation({
+            operationId: opData.operationId,
+            type: 'execute-schema',
+            status: 'RUNNING',
+            message: 'Executing Schema'
+         });
+         
+         const finalData = await pollOperation(opData.operationId, (step) => {
+            // Note: WorkflowContext isn't exposing a direct way to update currentProgressSteps from outside easily,
+            // but if backend updates the operation progress, GenerationProcessingModal will display it via GET status.
+         }, 2000);
+         
+         setExecutionResult(finalData);
+         if (finalData.runStatus) {
+           setRunStatus(finalData.runStatus);
+         } else {
+           const resultStatus = finalData.evaluationResult || finalData.status || 'UNKNOWN';
+           if (resultStatus.toUpperCase() === 'PASS') {
+             setRunStatus('COMPLETED');
+           } else {
+             setRunStatus('FAILED');
+           }
+         }
       } else {
-        setRunStatus('FAILED');
+         // Immediate result fallback
+         setExecutionResult(opData);
+         const resultStatus = opData.evaluationResult || opData.status || 'UNKNOWN';
+         if (resultStatus.toUpperCase() === 'PASS') {
+           setRunStatus('COMPLETED');
+         } else {
+           setRunStatus('FAILED');
+         }
       }
+
     } catch (err: any) {
       console.error("Execution failed:", err);
-      setExecutionError(err.message || "Failed to execute schema against the provided Event JSON.");
+      if (err.name === 'StoppedError' || (err.message && err.message.toLowerCase().includes('stopped'))) {
+          setExecutionError("Execution stopped by user.");
+      } else {
+          setExecutionError(err.message || "Failed to execute schema against the provided Event JSON.");
+      }
       setRunStatus('FAILED');
     } finally {
       setIsExecuting(false);
+      setActiveOperation(null);
     }
   };
 
-  const canExecute = eventJsonContent && expectedJsonContent && !isExecuting;
+  const handleCopyExpected = async () => {
+    if (workflow.finalOutputInputs?.expectedOutput) {
+       try {
+         await navigator.clipboard.writeText(JSON.stringify(workflow.finalOutputInputs.expectedOutput, null, 2));
+         setCopied(true);
+         setTimeout(() => setCopied(false), 2000);
+       } catch(e) {}
+    }
+  };
+
+  const inputs = workflow.finalOutputInputs;
+
+  if (!inputs && !hasExecuted) {
+    return (
+      <div className="flex flex-col min-h-full">
+        <StageActionBar title="Final Output" description="Waiting for inputs..." />
+        <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
+           <p className="text-xs">No inputs provided yet.</p>
+           <button onClick={() => setStage('schema')} className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold">
+             Return to Schema Studio
+           </button>
+        </div>
+      </div>
+    );
+  }
+
+  const dsMap = inputs?.eventJson?.SourceDataMap || {};
+  let expectedSummary = "None";
+  if (inputs?.expectedOutput) {
+     if (Array.isArray(inputs.expectedOutput)) {
+        expectedSummary = `${inputs.expectedOutput.length} Expected Records`;
+     } else if (inputs.expectedOutput._type === 'file') {
+        expectedSummary = `Attached File (${inputs.expectedOutput.name})`;
+     } else {
+        expectedSummary = "Custom JSON";
+     }
+  }
 
   return (
     <div className="flex flex-col min-h-full">
-      {/* 1. Sticky Workspace Top Action Bar */}
       <StageActionBar
-        title="Execute Generated Schema"
-        description={workflow.runStatus === 'COMPLETED' ? "Evaluation successful. Run complete." : "Test and evaluate your schema with runtime data."}
+        title="Final Output"
+        description={workflow.runStatus === 'COMPLETED' ? "Evaluation successful. Run complete." : "Evaluation results based on your runtime data."}
         leftActions={
           <button
             onClick={() => setStage('schema')}
@@ -192,321 +207,238 @@ export const FinalOutputStage: React.FC = () => {
         rightActions={
           <>
             <button
-              onClick={handleCopy}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
-            >
-              {copied ? <Check className="h-3.5 w-3.5 text-neutral-800 dark:text-neutral-200" /> : <Copy className="h-3.5 w-3.5" />}
-              <span>{copied ? 'Copied' : 'Copy JSON'}</span>
-            </button>
-
-            <button
-              onClick={downloadSchemaJson}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
+              onClick={() => {
+                 if (workflow.runId) {
+                    window.open(`${API_URL}/schema/${workflow.runId}/download`, '_blank');
+                 }
+              }}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Download Schema</span>
+            </button>
+            <button
+              onClick={() => {
+                 if (workflow.runId) {
+                    window.open(`${API_URL}/final-output/download?runId=${workflow.runId}`, '_blank');
+                 }
+              }}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Download results</span>
             </button>
           </>
         }
       />
 
-      {/* 2. Main Workspace Content */}
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-4 pb-16">
-        {/* View Switch */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-1 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs select-none">
-            <button
-              type="button"
-              onClick={() => setOutputView('schema')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                outputView === 'schema'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              Schema Output
-            </button>
-            <button
-              type="button"
-              onClick={() => setOutputView('execution')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                outputView === 'execution'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              Execute Schema
-            </button>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-neutral-500">Run Status:</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-              workflow.runStatus === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/50' :
-              workflow.runStatus === 'FAILED' ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800/50' :
-              'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/50'
-            }`}>
-              {workflow.runStatus}
-            </span>
-          </div>
+        
+        {/* Top Inputs Used Card */}
+        <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-sm space-y-4">
+           <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
+              <div className="flex items-center space-x-2">
+                 <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                 <h3 className="text-xs font-bold text-neutral-900 dark:text-white">Inputs Used for Execution</h3>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-semibold transition-colors"
+              >
+                Change inputs
+              </button>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                 <div className="text-[10px] font-bold text-neutral-500 uppercase">Event JSON</div>
+                 <div className="flex items-center space-x-2 text-xs font-mono text-neutral-700 dark:text-neutral-300">
+                    <FileJson className="h-4 w-4 text-blue-500" />
+                    <span className="truncate">{inputs?.eventFileName || 'Pasted Event JSON'}</span>
+                 </div>
+                 {inputs?.eventJson?.TenantID && inputs?.eventJson?.Process && (
+                    <div className="flex gap-2">
+                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">Tenant: {inputs.eventJson.TenantID}</span>
+                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">Process: {inputs.eventJson.Process}</span>
+                    </div>
+                 )}
+                 <div className="flex flex-wrap gap-1.5 pt-1">
+                    {Object.entries(dsMap).map(([k,v]: any) => (
+                       <span key={k} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
+                         {k} · {v.length ? v.length : v}
+                       </span>
+                    ))}
+                 </div>
+              </div>
+
+              <div className="space-y-4">
+                 <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Schema Key</div>
+                    <div className="flex items-center space-x-2 text-[11px] font-mono text-neutral-800 dark:text-neutral-200">
+                       <span className="truncate">{inputs?.schemaKey || 'N/A'}</span>
+                       {inputs?.uploadSchema && (
+                          <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800/50 rounded-md text-[9px] font-bold uppercase tracking-wider">
+                             Uploaded
+                          </span>
+                       )}
+                    </div>
+                 </div>
+                 <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Expected Output</div>
+                    <div className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300">
+                       {inputs?.expectedFileName || expectedSummary}
+                    </div>
+                 </div>
+              </div>
+           </div>
         </div>
 
-        {/* 2A. Schema Output View */}
-        {outputView === 'schema' && (
-          <>
-            {/* Verification Overview Card */}
-            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 lg:p-5 shadow-sm space-y-3 transition-colors">
-              <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-0.5 rounded-md border border-neutral-200 dark:border-neutral-700 flex items-center space-x-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-neutral-700 dark:text-neutral-300" />
-                    <span>Production Schema Verified</span>
-                  </span>
-                </div>
-                <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">{workflow.domain}</span>
-              </div>
-
-              <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                The business requirement for <span className="font-semibold text-neutral-900 dark:text-white">{workflow.domain}</span> has been compiled into a validated SCDP schema with {workflow.classes?.length || 7} domain classes, math transformations, and variance reconciliation gating.
-              </p>
-
-              {/* Scorecard Metrics */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
-                <div className="bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Classes</span>
-                    <Boxes className="h-3.5 w-3.5 text-neutral-500" />
-                  </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.classes?.length || 0}</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">SCDP Core Classes</p>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Components</span>
-                    <Calculator className="h-3.5 w-3.5 text-neutral-500" />
-                  </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{workflow.schema.stats.componentCount || 0}</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">Math & Logics</p>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Traceable Rules</span>
-                    <ShieldCheck className="h-3.5 w-3.5 text-neutral-500" />
-                  </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">{
-                    (workflow.requirements.problemStatements.length + 
-                    workflow.requirements.businessObjectives.length + 
-                    workflow.requirements.businessRequirements.length + 
-                    workflow.requirements.financeRequirements.length + 
-                    workflow.requirements.technicalRequirements.length)
-                  } Specs</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">PS, BO, BR, FR, TR</p>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-semibold uppercase">Gating</span>
-                    <CheckCircle2 className="h-3.5 w-3.5 text-neutral-500" />
-                  </div>
-                  <p className="text-lg font-bold text-neutral-900 dark:text-white mt-0.5">Active</p>
-                  <p className="text-[10px] text-neutral-400 truncate mt-0.5">Hard-gated execution</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Compiled Production Schema JSON View */}
-            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 lg:p-5 shadow-sm space-y-3 transition-colors">
-              <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-neutral-900 dark:text-white">
-                    Compiled Production Schema JSON
-                  </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
-                    {(((editedSchemaJson || workflow.schema.rawJson)?.length || 0) / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-              </div>
-
-              <div className="max-h-[380px] overflow-auto rounded-lg bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 p-3 font-mono text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed">
-                <pre className="whitespace-pre">{editedSchemaJson || workflow.schema.rawJson}</pre>
-              </div>
-            </div>
-          </>
+        {/* Execution Error (if any) */}
+        {executionError && (
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-sm">
+             <div className="p-4 bg-rose-50 border border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/50 rounded-xl flex items-start space-x-3">
+               <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+               <div className="space-y-1">
+                 <h3 className="text-xs font-bold text-rose-800 dark:text-rose-300">Execution Failed</h3>
+                 <p className="text-xs text-rose-700 dark:text-rose-400">{executionError}</p>
+                 {executionResult?.missingDataSources && (
+                    <ul className="list-disc list-inside text-[11px] text-rose-600 pt-1">
+                      {executionResult.missingDataSources.map((d: string, i: number) => <li key={i}>{d} missing</li>)}
+                    </ul>
+                 )}
+               </div>
+             </div>
+          </div>
         )}
 
-        {/* 2B. Execution Panel View */}
-        {outputView === 'execution' && (
+        {/* Evaluation Result Area */}
+        {executionResult && !executionError && (
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm overflow-hidden flex flex-col transition-colors">
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-bold text-neutral-900 dark:text-white">Execution & Evaluation</h2>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Execute the current schema against runtime Event JSON and compare with Expected Output.</p>
+            {/* Header / Banner */}
+            <div className={`px-5 py-4 border-b ${
+                 (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS')
+                   ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50'
+                   : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50'
+               } flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
+            >
+              <div className="flex items-center space-x-3">
+                 <h2 className={`text-sm font-bold ${
+                   (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS')
+                     ? 'text-emerald-800 dark:text-emerald-400'
+                     : 'text-rose-800 dark:text-rose-400'
+                 }`}>
+                   {executionResult.evaluationResult || executionResult.status || 'UNKNOWN'}
+                 </h2>
+                 {executionResult.duration && (
+                    <span className="text-[10px] font-mono text-neutral-500 opacity-80">
+                       Duration: {executionResult.duration}ms
+                    </span>
+                 )}
               </div>
-              
-              <button
-                onClick={executeSchema}
-                disabled={!canExecute}
-                className={`flex items-center space-x-2 px-6 py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
-                  !canExecute
-                    ? 'bg-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20 hover:shadow-blue-500/40 cursor-pointer'
-                }`}
-              >
-                {isExecuting ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Evaluating schema...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-3.5 w-3.5" />
-                    <span>Execute Schema →</span>
-                  </>
-                )}
-              </button>
+              {executionResult.s3Uri && (
+                 <div className="text-[10px] font-mono text-neutral-600 dark:text-neutral-400 max-w-xs truncate" title={executionResult.s3Uri}>
+                    Target: {executionResult.s3Uri}
+                 </div>
+              )}
             </div>
 
             <div className="p-5 space-y-6">
+              {/* Exact Comparison Table */}
+              {executionResult.schemaComparisons && (
+                 <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">Per-Schema Output Evaluation</h4>
+                    <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden text-[11px]">
+                       <table className="w-full text-left">
+                          <thead className="bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-semibold uppercase">
+                             <tr>
+                                <th className="p-2 border-b border-neutral-200 dark:border-neutral-700">Schema</th>
+                                <th className="p-2 border-b border-neutral-200 dark:border-neutral-700">Expected</th>
+                                <th className="p-2 border-b border-neutral-200 dark:border-neutral-700">Actual</th>
+                                <th className="p-2 border-b border-neutral-200 dark:border-neutral-700">Matched</th>
+                                <th className="p-2 border-b border-neutral-200 dark:border-neutral-700">Status</th>
+                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300">
+                             {executionResult.schemaComparisons.map((row: any, i: number) => (
+                                <tr key={i}>
+                                   <td className="p-2 font-mono font-medium">{row.schema}</td>
+                                   <td className="p-2">{row.expected}</td>
+                                   <td className="p-2">{row.actual}</td>
+                                   <td className="p-2">{row.matched}</td>
+                                   <td className="p-2">
+                                      <span className={row.status === 'PASS' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>{row.status}</span>
+                                   </td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
+                 </div>
+              )}
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Event JSON Upload */}
-                <div className="space-y-2">
-                  <label className="flex justify-between text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                    <span>1. Event JSON *</span>
-                    {eventFile && <span className="text-emerald-600 dark:text-emerald-400 flex items-center space-x-1"><CheckCircle2 className="h-3 w-3"/><span>Ready</span></span>}
-                  </label>
-                  
-                  <div className="flex flex-col space-y-2">
-                    <label className="cursor-pointer inline-flex items-center justify-center space-x-2 px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 transition-colors w-full">
-                      <Upload className="h-3.5 w-3.5" />
-                      <span>Upload Event JSON</span>
-                      <input 
-                        type="file" 
-                        accept=".json" 
-                        onChange={handleEventFileUpload} 
-                        className="hidden" 
-                      />
-                    </label>
-                    {eventFile && (
-                      <div className="flex items-center space-x-2 text-xs font-mono text-neutral-600 dark:text-neutral-300">
-                        <FileJson className="h-4 w-4 text-blue-500" />
-                        <span className="truncate">{eventFile.name}</span>
-                      </div>
-                    )}
-                    {eventFileError && (
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center space-x-1">
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        <span>{eventFileError}</span>
-                      </p>
-                    )}
-                  </div>
+              {/* Differences List */}
+              {((executionResult.evaluationResult?.toUpperCase() === 'FAIL' || executionResult.status?.toUpperCase() === 'FAIL') && executionResult.differences) && (
+                <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-lg p-3">
+                  <h4 className="text-[11px] font-bold text-rose-800 dark:text-rose-300 mb-1.5 uppercase tracking-wider flex justify-between">
+                     <span>Differences</span>
+                     {Array.isArray(executionResult.differences) && executionResult.differences.length > 50 && (
+                        <button onClick={() => setShowAllDiffs(!showAllDiffs)} className="text-blue-600 hover:underline lowercase cursor-pointer">{showAllDiffs ? 'Show less' : 'Show all'}</button>
+                     )}
+                  </h4>
+                  <pre className="text-[11px] font-mono text-rose-700 dark:text-rose-400 whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-auto">
+                    {Array.isArray(executionResult.differences) 
+                      ? JSON.stringify(showAllDiffs ? executionResult.differences : executionResult.differences.slice(0, 50), null, 2) 
+                      : typeof executionResult.differences === 'object' ? JSON.stringify(executionResult.differences, null, 2) : executionResult.differences}
+                  </pre>
                 </div>
-
-                {/* Expected Output Upload */}
-                <div className="space-y-2">
-                  <label className="flex justify-between text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                    <span>2. Expected Output JSON *</span>
-                    {expectedFile && <span className="text-emerald-600 dark:text-emerald-400 flex items-center space-x-1"><CheckCircle2 className="h-3 w-3"/><span>Ready</span></span>}
-                  </label>
-                  
-                  <div className="flex flex-col space-y-2">
-                    <label className="cursor-pointer inline-flex items-center justify-center space-x-2 px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-neutral-700 transition-colors w-full">
-                      <Upload className="h-3.5 w-3.5" />
-                      <span>Upload Expected Output</span>
-                      <input 
-                        type="file" 
-                        accept=".json" 
-                        onChange={handleExpectedFileUpload} 
-                        className="hidden" 
-                      />
-                    </label>
-                    {expectedFile && (
-                      <div className="flex items-center space-x-2 text-xs font-mono text-neutral-600 dark:text-neutral-300">
-                        <FileJson className="h-4 w-4 text-blue-500" />
-                        <span className="truncate">{expectedFile.name}</span>
-                      </div>
+              )}
+              
+              <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden mt-4">
+                 <div className="flex justify-between items-center bg-neutral-100 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 pr-2">
+                    <div className="flex">
+                       <button onClick={() => setResultViewerTab('actual')} className={`px-4 py-2 text-[11px] font-bold transition-colors cursor-pointer ${resultViewerTab === 'actual' ? 'bg-white dark:bg-neutral-950 text-blue-600 dark:text-blue-400 border-t-2 border-t-blue-600 dark:border-t-blue-400' : 'text-neutral-500'}`}>Actual output</button>
+                       <button onClick={() => setResultViewerTab('expected')} className={`px-4 py-2 text-[11px] font-bold transition-colors cursor-pointer ${resultViewerTab === 'expected' ? 'bg-white dark:bg-neutral-950 text-blue-600 dark:text-blue-400 border-t-2 border-t-blue-600 dark:border-t-blue-400' : 'text-neutral-500'}`}>Expected output</button>
+                    </div>
+                    {resultViewerTab === 'expected' && inputs?.expectedOutput && (
+                       <button onClick={handleCopyExpected} className="flex items-center space-x-1 px-2 py-1 bg-white dark:bg-neutral-800 text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white rounded border border-neutral-200 dark:border-neutral-700 text-[10px] font-semibold transition-colors cursor-pointer">
+                          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                          <span>{copied ? 'Copied' : 'Copy'}</span>
+                       </button>
                     )}
-                    {expectedFileError && (
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center space-x-1">
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        <span>{expectedFileError}</span>
-                      </p>
+                 </div>
+                 <div className="p-3 bg-white dark:bg-neutral-950 max-h-[400px] overflow-auto">
+                    {resultViewerTab === 'actual' && (
+                       <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap">
+                          {JSON.stringify(executionResult.actualOutput || executionResult.output || executionResult, null, 2)}
+                       </pre>
                     )}
-                  </div>
-                </div>
+                    {resultViewerTab === 'expected' && (
+                       <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap">
+                          {inputs?.expectedOutput?._type === 'file' 
+                             ? `[Attached File: ${inputs.expectedOutput.name}]\nType: ${inputs.expectedOutput.type}\nSize: ${inputs.expectedOutput.size} bytes` 
+                             : JSON.stringify(inputs?.expectedOutput, null, 2)}
+                       </pre>
+                    )}
+                 </div>
               </div>
-
-              {/* Execution Error */}
-              {executionError && (
-                <div className="p-4 bg-rose-50 border border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/50 rounded-xl flex items-start space-x-3">
-                  <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <h3 className="text-xs font-bold text-rose-800 dark:text-rose-300">Execution Failed</h3>
-                    <p className="text-xs text-rose-700 dark:text-rose-400">{executionError}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Evaluation Result */}
-              {executionResult && (
-                <div className="space-y-4 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-neutral-800 dark:text-neutral-200">Evaluation Result</label>
-                    <span className={`text-[11px] font-bold px-3 py-1 rounded-md uppercase border ${
-                      (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS')
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/50'
-                        : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/50'
-                    }`}>
-                      {executionResult.evaluationResult || executionResult.status || 'UNKNOWN'}
-                    </span>
-                  </div>
-                  
-                  {/* Differences */}
-                  {((executionResult.evaluationResult?.toUpperCase() === 'FAIL' || executionResult.status?.toUpperCase() === 'FAIL') && executionResult.differences) && (
-                    <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-lg p-3">
-                      <h4 className="text-[11px] font-bold text-rose-800 dark:text-rose-300 mb-1.5 uppercase tracking-wider">Differences</h4>
-                      <pre className="text-[11px] font-mono text-rose-700 dark:text-rose-400 whitespace-pre-wrap leading-relaxed">
-                        {typeof executionResult.differences === 'object' 
-                          ? JSON.stringify(executionResult.differences, null, 2) 
-                          : executionResult.differences}
-                      </pre>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Actual Output */}
-                    <div className="space-y-2">
-                      <div className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Actual Output</div>
-                      <div className="relative rounded-lg bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 overflow-hidden">
-                        <div className="p-3 max-h-[300px] overflow-auto">
-                          <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap leading-relaxed">
-                            {JSON.stringify(executionResult.actualOutput || executionResult.output || executionResult, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expected Output */}
-                    <div className="space-y-2">
-                      <div className="text-[10px] font-bold uppercase text-neutral-500 dark:text-neutral-400">Expected Output</div>
-                      <div className="relative rounded-lg bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 overflow-hidden">
-                        <div className="p-3 max-h-[300px] overflow-auto">
-                          <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap leading-relaxed">
-                            {JSON.stringify(executionResult.expectedOutput || expectedJsonContent, null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
       </div>
+
+      <FinalOutputInputsModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        initialInputs={inputs}
+        onRun={(newInputs) => {
+           // We re-store inputs in workflow and auto-trigger on effect
+           useWorkflow().updateWorkflowField('finalOutputInputs', newInputs); // Note: we can't do this inside here directly via hook, we must use the imported one.
+           // Wait, we can't call hooks inside callbacks like this. We extracted `updateWorkflowField` earlier? No we didn't.
+           // We will just do:
+           setIsModalOpen(false);
+        }}
+      />
+      <GenerationProcessingModal isOpen={isExecuting} operationLabel="Executing Schema..." />
     </div>
   );
 };

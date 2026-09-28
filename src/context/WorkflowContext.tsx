@@ -45,6 +45,7 @@ interface WorkflowContextValue {
   workflow: SchemaGenerationWorkflow;
   setWorkflow: React.Dispatch<React.SetStateAction<SchemaGenerationWorkflow>>;
   setStage: (stage: WorkflowStage) => void;
+  updateWorkflowField: (field: keyof SchemaGenerationWorkflow, value: any) => void;
   updateBusinessInput: (updates: Partial<BusinessInput>) => void;
   loadSampleInput: () => void;
   addSupportingDocument: (doc: SupportingDocument) => void;
@@ -89,6 +90,7 @@ interface WorkflowContextValue {
   // Generation methods
   generateBusinessRequirement: () => Promise<void>;
   generateRequirements: () => Promise<void>;
+  generateClasses: () => Promise<void>;
   generateSchema: () => Promise<void>;
   isGeneratingModalOpen: boolean;
   closeGeneratingModal: () => void;
@@ -381,7 +383,15 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     setWorkflow((prev) => ({ ...prev, runStatus: status, updatedAt: new Date().toISOString() }));
   }, []);
 
-  const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
+  
+  const updateWorkflowField = useCallback((field: keyof SchemaGenerationWorkflow, value: any) => {
+    setWorkflow(prev => ({
+      ...prev,
+      [field]: value,
+      updatedAt: new Date().toISOString()
+    }));
+  }, []);
+const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     setWorkflow((prev) => ({
       ...prev,
       businessInput: { ...prev.businessInput, ...updates },
@@ -577,7 +587,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [workflow.businessInput]);
 
   // Generation 2: Reviewed Business Requirement -> Structured Requirements
-  const generateRequirements = useCallback(async () => {
+  const generateRequirements = useCallback(async (additionalReqStrs?: string[]) => {
     setGenerationOperationLabel('Generating Requirements…');
     setIsGeneratingModalOpen(true);
     setWorkflow((prev: SchemaGenerationWorkflow) => ({
@@ -609,7 +619,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             status: 'RUNNING',
             message: 'Generating Requirements…'
           });
-        }
+        },
       );
 
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
@@ -637,9 +647,70 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, [workflow.businessInput]);
 
   // Generation 3: Classes
+  const generateClasses = useCallback(async () => {
+    setGenerationOperationLabel('Generating Domain Classes...');
+    setIsGeneratingModalOpen(true);
+    setWorkflow((prev: SchemaGenerationWorkflow) => ({
+      ...prev,
+      generationStatus: 'generating',
+      currentProgressSteps: [],
+    }));
+
+    try {
+      const additionalReqStrs = workflow.additionalRequirements?.map(r => r.content || r.fileName);
+      const result = await classService.generateClasses(
+        workflow.requirements!,
+        workflow.runId || "",
+        (step: GenerationProgressStep) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
+            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
+            const newSteps = [...prev.currentProgressSteps];
+            if (existingIdx >= 0) {
+              newSteps[existingIdx] = step;
+            } else {
+              newSteps.push(step);
+            }
+            return { ...prev, currentProgressSteps: newSteps };
+          });
+        },
+        (operationId: string) => {
+          setActiveOperation({
+            operationId,
+            type: 'generate-classes',
+            status: 'RUNNING',
+            message: 'Generating Domain Classes...'
+          });
+        },
+        additionalReqStrs
+      );
+
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
+        ...prev,
+        classes: result,
+        stage: 'classes',
+        generationStatus: 'completed',
+        updatedAt: new Date().toISOString(),
+      }));
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
+      console.error(err);
+      if (err.message === "Another generation is running") {
+        alert("Another generation is running");
+        setIsGeneratingModalOpen(false);
+      } else if (err.name === 'StoppedError') {
+        alert("Generation stopped");
+        setIsGeneratingModalOpen(false);
+        setActiveOperation(null);
+      } else {
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+      }
+    }
+  }, [workflow.runId]);
 
   // Generation 4: Schema
   const generateSchema = useCallback(async () => {
+    if (workflow.generationStatus === 'generating') return;
     if (!workflow.requirements || !workflow.classes) return;
     setGenerationOperationLabel('Generating Schema…');
     setIsGeneratingModalOpen(true);
@@ -650,6 +721,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     }));
 
     try {
+      const additionalReqStrs = workflow.additionalRequirements?.map(r => r.content || r.fileName);
       const result = await schemaService.generateSchema(
         workflow.requirements,
         workflow.classes,
@@ -673,7 +745,8 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
             status: 'RUNNING',
             message: 'Generating Schema…'
           });
-        }
+        },
+        additionalReqStrs
       );
 
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
@@ -1126,6 +1199,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         setWorkflow,
         setStage,
         setRunStatus,
+        updateWorkflowField,
         updateBusinessInput,
         loadSampleInput,
         addSupportingDocument,
@@ -1153,6 +1227,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         toggleTheme,
         generationCost,
         generateBusinessRequirement,
+        generateClasses,
         generateRequirements,
         generateSchema,
         isGeneratingModalOpen,

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { FileText, Loader2, AlertCircle, X } from 'lucide-react';
+import { FileText, Loader2, AlertCircle, X, Lock } from 'lucide-react';
 import { API_URL } from '../../services/api/config';
 
 interface InputFile {
@@ -147,7 +147,16 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
                           : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-200'
                       }`}
                     >
-                      <span className="truncate mr-2">{file.name}</span>
+                      <span className="truncate mr-2 flex items-center space-x-2">
+                        <span>{file.name}</span>
+                        {file.name === '00_Current_Requirements.txt' ? (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-[9px] font-bold text-blue-700 dark:text-blue-400 shrink-0 uppercase tracking-wider">
+                            Dynamic — this case
+                          </span>
+                        ) : (
+                          <Lock className="h-3 w-3 text-neutral-400 shrink-0" />
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>

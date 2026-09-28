@@ -11,7 +11,8 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     classes: SchemaClass[],
     runId?: string,
     onProgress?: ProgressCallback,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    additionalRequirements?: string[]
   ): Promise<SchemaModel> {
     if (onProgress) {
       onProgress({ id: 'schema-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate schema request' });
@@ -20,7 +21,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     const response = await fetch(`${API_URL}/generate/schema`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requirements, classes, runId }),
+      body: JSON.stringify({ requirements, classes, runId, additionalRequirements }),
     });
 
     if (!response.ok) {

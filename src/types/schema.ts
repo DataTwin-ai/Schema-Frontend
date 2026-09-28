@@ -23,6 +23,7 @@ export interface SchemaModel {
   schemaGroupName: string;
   root: SchemaTreeNode[];
   rawJson: string;
+  classes?: any[];
   generatedAt: string;
   version: string;
   stats: {
@@ -39,6 +40,7 @@ export interface SchemaVersion {
   versionNumber: number;
   schemaGroupName: string;
   rawJson: string;
+  classes?: any[];
   timestamp: string;
   actor: string;
   changeSummary?: string;
