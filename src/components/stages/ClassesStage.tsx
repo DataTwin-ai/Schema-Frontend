@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { useAuth } from '../../context/AuthContext';
 import { 
   ArrowRight, 
   ArrowLeft, 
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { SchemaClass, ClassVersion, SchemaComponent } from '../../types';
 import { StageActionBar } from '../layout/StageActionBar';
+import { SaveDraftButton } from '../common/SaveDraftButton';
 import { API_URL } from '../../services/api/config';
 import { RequirementCategoryChip } from '../common/RequirementCategoryChip';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
@@ -33,13 +35,14 @@ interface ClassRowProps {
   item: SchemaClass;
   isEditing: boolean;
   isHistoryOpen: boolean;
-  versions: ClassVersion[];
   onView: () => void;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSave: (updated: Partial<SchemaClass>) => void;
   onDelete?: () => void;
   onOpenHistory: () => void;
+  userName: string;
+  runId: string;
   onCloseHistory: () => void;
 }
 
@@ -47,7 +50,6 @@ const ClassRow: React.FC<ClassRowProps> = ({
   item,
   isEditing,
   isHistoryOpen,
-  versions,
   onView,
   onStartEdit,
   onCancelEdit,
@@ -55,6 +57,8 @@ const ClassRow: React.FC<ClassRowProps> = ({
   onDelete,
   onOpenHistory,
   onCloseHistory,
+  userName,
+  runId,
 }) => {
   const [editClassName, setEditClassName] = useState(item.className);
   const [editDatasource, setEditDatasource] = useState(item.datasource);
@@ -62,7 +66,32 @@ const ClassRow: React.FC<ClassRowProps> = ({
   const [editPurpose, setEditPurpose] = useState(item.purpose);
   const [editComponents, setEditComponents] = useState<SchemaComponent[]>(item.components || []);
   const [editRawText, setEditRawText] = useState(item.rawText || '');
+  const [versions, setVersions] = useState<ClassVersion[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadVersions = useCallback(async () => {
+    if (!item.metadata?.fileName) return;
+    try {
+      const res = await fetch(`${API_URL}/class-prompts/${item.metadata.fileName}/versions?runId=${runId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data);
+      }
+    } catch (e) {}
+  }, [item.metadata?.fileName, runId]);
+
+  useEffect(() => {
+    if (isHistoryOpen) {
+      loadVersions();
+    }
+  }, [isHistoryOpen, loadVersions]);
+  
+  useEffect(() => {
+    const handleFocus = () => { if (isHistoryOpen) loadVersions(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isHistoryOpen, loadVersions]);
+
 
   // Sorted historical versions (newest first)
   const sortedHist = useMemo(() => {
@@ -103,14 +132,22 @@ const ClassRow: React.FC<ClassRowProps> = ({
   const resolveVersionData = useCallback(
     (id: string) => {
       if (id === 'current' || !id) {
+        const currentData = isEditing ? {
+          className: editClassName,
+          datasource: editDatasource,
+          grain: editGrain,
+          purpose: editPurpose,
+          components: editComponents
+        } : item;
+        
         return {
           id: 'current',
           isCurrent: true,
-          title: `Class #${item.classNumber} ┬À ${item.className}`,
-          content: formatClassSpecification(item),
-          actor: 'Logaprasanth (User)',
-          timestamp: 'Active Current State',
-          changeSummary: 'Live editable source of truth in workspace',
+          title: `Class #${item.classNumber} · ${currentData.className}`,
+          content: formatClassSpecification(currentData as any),
+          actor: userName,
+          timestamp: isEditing ? 'Active Current State (Unsaved)' : 'Saved State',
+          changeSummary: isEditing ? 'Live editable preview' : 'Saved source of truth',
         };
       }
 
@@ -119,7 +156,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
         return {
           id: hist.id,
           isCurrent: false,
-          title: hist.title || `Class #${item.classNumber} ┬À ${hist.className}`,
+          title: hist.title || `Class #${item.classNumber} · ${hist.className}`,
           content: hist.specification || formatClassSpecification({
             className: hist.className,
             datasource: hist.datasource,
@@ -135,9 +172,9 @@ const ClassRow: React.FC<ClassRowProps> = ({
       return {
         id: 'current',
         isCurrent: true,
-        title: `Class #${item.classNumber} ┬À ${item.className}`,
+        title: `Class #${item.classNumber} · ${item.className}`,
         content: formatClassSpecification(item),
-        actor: 'Logaprasanth (User)',
+        actor: userName,
         timestamp: 'Active Current State',
         changeSummary: 'Live editable source of truth in workspace',
       };
@@ -180,6 +217,31 @@ const ClassRow: React.FC<ClassRowProps> = ({
 
   const [saveError, setSaveError] = useState<string | null>(null);
   
+  
+  const handleRestore = async (versionId: string) => {
+    if (!confirm(`Restore v${versionId}? Your current state is kept as a version.`)) return;
+    if (!item.metadata?.fileName) return;
+    try {
+      const res = await fetch(`${API_URL}/class-prompts/${item.metadata.fileName}/versions/${versionId}/restore?runId=${runId}`, {
+        method: 'POST',
+        headers: { 'X-User-Name': userName }
+      });
+      if (res.ok) {
+        const returnedClass = await res.json();
+        onSave({ ...returnedClass, id: item.id });
+        setEditClassName(returnedClass.className || item.className);
+        setEditDatasource(returnedClass.datasource || item.datasource);
+        setEditGrain(returnedClass.grain || item.grain);
+        setEditPurpose(returnedClass.purpose || item.purpose);
+        setEditComponents(returnedClass.components || item.components || []);
+        setEditRawText(returnedClass.rawText || item.rawText || '');
+        if (isHistoryOpen) loadVersions();
+      }
+    } catch (e) {
+      alert("Restore failed");
+    }
+  };
+
   const handleSave = async () => {
     setSaveError(null);
     const updatedFields = { rawText: editRawText };
@@ -187,7 +249,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
       if (item.metadata?.fileName) {
         const res = await fetch(`${API_URL}/class-prompts/${item.metadata.fileName}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-User-Name': userName },
           body: JSON.stringify(updatedFields)
         });
         if (!res.ok) {
@@ -195,8 +257,8 @@ const ClassRow: React.FC<ClassRowProps> = ({
           throw new Error(errData.detail || `HTTP ${res.status}`);
         }
         const returnedClass = await res.json();
-        // keep the id from frontend state but merge the rest
         onSave({ ...returnedClass, id: item.id });
+        if (isHistoryOpen) loadVersions();
       } else {
         onSave(updatedFields);
       }
@@ -430,7 +492,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">Class #{item.classNumber}</span> ┬À {item.className}
+                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">Class #{item.classNumber}</span> · {item.className}
               </div>
             </div>
 
@@ -501,6 +563,8 @@ export const ClassesStage: React.FC = () => {
     removeAdditionalInformation,
     updateWorkflowField
   } = useWorkflow();
+  const { user } = useAuth();
+  const userName = user?.name || 'You';
 
   const classes = workflow.classes || [];
 
@@ -734,9 +798,10 @@ export const ClassesStage: React.FC = () => {
             <ClassRow
               key={cls.id}
               item={cls}
+              userName={userName}
+              runId={workflow.runId || ""}
               isEditing={editingClassId === cls.id}
               isHistoryOpen={historyClassId === cls.id}
-              versions={versions}
               onView={() => setViewingClass(cls)}
               onStartEdit={() => {
                 setEditingClassId(cls.id);

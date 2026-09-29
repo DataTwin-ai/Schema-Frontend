@@ -139,8 +139,10 @@ export function computeVersionDiff(
   oldTitle: string = '',
   newTitle: string = ''
 ): VersionDiffResult {
-  const oldLines = oldText ? oldText.split('\n') : [];
+    const oldLines = oldText ? oldText.split('\n') : [];
   const newLines = newText ? newText.split('\n') : [];
+
+  const isLarge = (oldLines.length + newLines.length) > 5000;
 
   // Line-level LCS
   const dp = computeLCS(oldLines, newLines);
@@ -201,7 +203,7 @@ export function computeVersionDiff(
       const nextEntry = rawEntries[idx + 1] as { kind: 'added'; newLine: string };
       const sim = computeSimilarity(entry.oldLine, nextEntry.newLine);
 
-      if (sim > 0.3) {
+      if (sim > 0.3 && !isLarge) {
         // High similarity: compute intra-line word-level diff
         const wordDiff = computeWordDiff(entry.oldLine, nextEntry.newLine);
         previousLines.push({

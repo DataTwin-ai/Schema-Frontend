@@ -18,8 +18,8 @@ import { MockPricingService } from './mock/MockPricingService';
 import { MockAuthService } from './mock/MockAuthService';
 import { MockHistoryService } from './mock/MockHistoryService';
 import { MockRequirementHistoryService } from './mock/MockRequirementHistoryService';
-import { MockClassHistoryService } from './mock/MockClassHistoryService';
-import { MockSchemaHistoryService } from './mock/MockSchemaHistoryService';
+import { ApiClassHistoryService } from './api/ApiClassHistoryService';
+import { ApiSchemaHistoryService } from './api/ApiSchemaHistoryService';
 
 export * from './interfaces';
 export * from './api/ApiRequirementsGenerationService';
@@ -30,8 +30,8 @@ export * from './mock/MockPricingService';
 export * from './mock/MockAuthService';
 export * from './mock/MockHistoryService';
 export * from './mock/MockRequirementHistoryService';
-export * from './mock/MockClassHistoryService';
-export * from './mock/MockSchemaHistoryService';
+export * from './api/ApiClassHistoryService';
+export * from './api/ApiSchemaHistoryService';
 
 // Service factory / registry using Real Backend Services
 export const requirementsService: IRequirementsGenerationService = new ApiRequirementsGenerationService();
@@ -42,8 +42,8 @@ export const pricingService: IPricingService = new MockPricingService();
 export const authService: IAuthService = new MockAuthService();
 export const historyService: IHistoryService = new MockHistoryService();
 export const requirementHistoryService: IRequirementHistoryService = new MockRequirementHistoryService();
-export const classHistoryService: IClassHistoryService = new MockClassHistoryService();
-export const schemaHistoryService: ISchemaHistoryService = new MockSchemaHistoryService();
+export const classHistoryService: IClassHistoryService = new ApiClassHistoryService();
+export const schemaHistoryService: ISchemaHistoryService = new ApiSchemaHistoryService();
 
 
 export * from './api/ApiSchemaStudioService';

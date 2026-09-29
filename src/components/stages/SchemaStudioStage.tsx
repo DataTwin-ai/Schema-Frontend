@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
+import { useAuth } from '../../context/AuthContext';
+import { schemaHistoryService } from '../../services';
 import { 
   Search, 
   ChevronRight, 
@@ -28,11 +30,14 @@ import { SchemaTreeNode } from '../../types';
 import { schemaStudioService } from '../../services/api/ApiSchemaStudioService';
 import { API_URL } from '../../services/api/config';
 import { StageActionBar } from '../layout/StageActionBar';
+import { SaveDraftButton } from '../common/SaveDraftButton';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
 import { FinalOutputInputsModal } from '../common/FinalOutputInputsModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 
 export const SchemaStudioStage: React.FC = () => {
+  const { user } = useAuth();
+  const userName = user?.name || 'You';
   const { 
     workflow, 
     setStage, 
@@ -107,7 +112,7 @@ export const SchemaStudioStage: React.FC = () => {
 
       const newRawJson = JSON.stringify(parsed, null, 2);
       
-      const data = await schemaStudioService.updateSchema(workflow.runId, 'tree-edit', `Edited ${nodeTitle}`, newRawJson);
+      const data = await schemaStudioService.updateSchema(workflow.runId, 'tree-edit', `Edited ${nodeTitle}`, newRawJson, userName);
       
       setEditedSchemaJson(data.rawJson);
       updateWorkflowField('schema', data);
@@ -123,6 +128,23 @@ export const SchemaStudioStage: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
+  
+  const handleRestoreSchema = async (versionId: string) => {
+    if (!workflow.runId) return;
+    const versionNumber = parseInt(versionId.replace('v', ''), 10) || parseInt(versionId, 10);
+    if (!confirm(`Restore v${versionNumber}? Your current state is kept as a version.`)) return;
+    try {
+      const returnedSchema = await schemaHistoryService.restoreVersion(workflow.runId, versionNumber, userName);
+      updateWorkflowField('schema', returnedSchema);
+      setEditedSchemaJson(returnedSchema.rawJson);
+      setIsEditing(false);
+      const v = await schemaHistoryService.listVersions(workflow.runId);
+      setHistoryVersions(v);
+    } catch (e) {
+      alert("Restore failed");
+    }
+  };
+
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
   const [isEditing, setIsEditing] = useState(false);
@@ -155,7 +177,7 @@ export const SchemaStudioStage: React.FC = () => {
 
   useEffect(() => {
     if (isHistoryOpen && workflow.runId) {
-      schemaStudioService.getSchemaVersions(workflow.runId)
+      schemaHistoryService.listVersions(workflow.runId)
         .then(v => setHistoryVersions(v))
         .catch(console.error);
     }
@@ -200,24 +222,24 @@ const previousVersionData = useMemo(() => {
       id: 'current',
       title: 'SCDP Schema JSON (Live Model)',
       content: workflow.schema?.rawJson || '',
-      actor: 'Logaprasanth (User)',
+      actor: userName,
       timestamp: 'Active Current State',
       changeSummary: 'Live editable source of truth in workspace',
       isCurrent: true,
     };
   }, [schemaVersions, selectedPreviousVersionId, workflow.schema]);
 
-const currentVersionData = useMemo(() => {
+  const currentVersionData = useMemo(() => {
     return {
       id: 'current',
-      title: 'SCDP Schema JSON (Current Live)',
-      content: editedSchemaJson || workflow.schema?.rawJson || '',
-      actor: 'Logaprasanth (User)',
-      timestamp: 'Active Current State',
-      changeSummary: 'Live editable source of truth in workspace',
+      title: 'SCDP Schema JSON (Live)',
+      content: isEditing ? editedSchemaJson : (workflow.schema?.rawJson || ''),
+      actor: userName,
+      timestamp: isEditing ? 'Active Current State (Unsaved)' : 'Saved State',
+      changeSummary: isEditing ? 'Live editable preview' : 'Saved source of truth',
       isCurrent: true,
     };
-  }, [editedSchemaJson, workflow.schema]);
+  }, [isEditing, editedSchemaJson, workflow.schema, userName]);
 
 if (isLoading) {
     return <div className="flex h-full items-center justify-center p-12"><div className="text-sm text-neutral-500">Loading schema...</div></div>;
@@ -589,6 +611,7 @@ if (isLoading) {
                 selectedCurrentVersionId="current"
                 onSelectPreviousVersion={(id) => setSelectedPreviousVersionId(id)}
                 onSelectCurrentVersion={() => {}}
+                onRestoreVersion={() => handleRestoreSchema(selectedPreviousVersionId)}
               />
             )}
           </div>

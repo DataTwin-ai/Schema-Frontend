@@ -21,6 +21,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
+import { SaveDraftButton } from '../common/SaveDraftButton';
 import { RequirementVersion } from '../../types';
 import { RequirementCategoryChip } from '../common/RequirementCategoryChip';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
@@ -206,6 +207,15 @@ const RequirementRow: React.FC<RequirementRowProps> = ({
 
             {!isEditing && !isHistoryOpen && (
               <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={onStartEdit}
+                  className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 hover:text-neutral-950 dark:hover:text-white bg-neutral-100/80 hover:bg-neutral-200/80 dark:bg-neutral-800 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 transition-colors flex items-center space-x-1 cursor-pointer shadow-2xs"
+                  title="Edit requirement"
+                >
+                  <Edit3 className="h-3 w-3 text-neutral-500" />
+                  <span>Edit</span>
+                </button>
                 <button
                   type="button"
                   onClick={onOpenHistory}
@@ -528,6 +538,7 @@ export const RequirementsStage: React.FC = () => {
         }
         rightActions={
           <>
+            <SaveDraftButton />
             <button
               onClick={generateClasses}
               className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"

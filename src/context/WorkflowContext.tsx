@@ -1,4 +1,5 @@
 'use client';
+import { API_URL } from '../services/api/config';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
@@ -89,7 +90,7 @@ interface WorkflowContextValue {
 
   // Generation methods
   generateBusinessRequirement: () => Promise<void>;
-  generateRequirements: () => Promise<void>;
+  generateRequirements: (navigate?: boolean) => Promise<void>;
   generateClasses: () => Promise<void>;
   generateSchema: () => Promise<void>;
   isGeneratingModalOpen: boolean;
@@ -106,6 +107,9 @@ interface WorkflowContextValue {
     error?: string;
   } | null;
   setActiveOperation: (op: any) => void;
+
+  saveDraft: (unsavedSchemaText?: string) => Promise<void>;
+  continueDraft: (runId: string) => Promise<any>;
 
   // Requirements updates
   updateProblemStatement: (id: string, updated: Partial<ProblemStatement>) => void;
@@ -587,7 +591,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
   }, [workflow.businessInput]);
 
   // Generation 2: Reviewed Business Requirement -> Structured Requirements
-  const generateRequirements = useCallback(async (additionalReqStrs?: string[]) => {
+  const generateRequirements = useCallback(async (navigate: boolean = true) => {
     setGenerationOperationLabel('Generating Requirements…');
     setIsGeneratingModalOpen(true);
     setWorkflow((prev: SchemaGenerationWorkflow) => ({
@@ -625,7 +629,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         requirements: result,
-        stage: 'requirements',
+        ...(navigate ? { stage: 'requirements' } : {}),
         generationStatus: 'completed',
         updatedAt: new Date().toISOString(),
       }));
@@ -1192,7 +1196,58 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     // Do NOT insert automatic assistant messages on reset!
   }, []);
 
-  return (
+  
+  const saveDraft = useCallback(async (unsavedSchemaText?: string) => {
+    if (!workflow.runId) return;
+    try {
+      const res = await fetch(`${API_URL}/runs/${workflow.runId}/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: workflow.stage,
+          workflowState: workflow,
+          unsavedSchemaText
+        })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to save draft');
+      }
+      setWorkflow(prev => ({ ...prev, lastDraftSavedAt: new Date().toISOString() }));
+    } catch (err: any) {
+      console.error('Failed to save draft:', err);
+      throw err;
+    }
+  }, [workflow]);
+
+  const continueDraft = useCallback(async (runId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/runs/${runId}/continue`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to continue draft');
+      }
+      const data = await res.json();
+      if (data.workflowState) {
+        setWorkflow(data.workflowState);
+        if (data.stage) setStage(data.stage as any);
+        if (data.unsavedSchemaText !== undefined && data.unsavedSchemaText !== null) {
+          setEditedSchemaJson(data.unsavedSchemaText);
+        } else if (data.workflowState.schema) {
+           // We might need to reset it to the loaded schema, but let's just leave it, or set to stringified schema.
+           setEditedSchemaJson(JSON.stringify(data.workflowState.schema, null, 2));
+        }
+        setActiveView('generator');
+        return data;
+      }
+    } catch (err: any) {
+      throw err;
+    }
+  }, [setStage]);
+
+return (
     <WorkflowContext.Provider
       value={{
         workflow,
@@ -1263,6 +1318,8 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         clearAssistantChat,
         resetWorkflow,
         loadHistoricalSchemaForEdit,
+        saveDraft,
+        continueDraft,
       }}
     >
       {children}

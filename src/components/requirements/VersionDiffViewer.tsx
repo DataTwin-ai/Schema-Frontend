@@ -27,6 +27,7 @@ export interface VersionDiffViewerProps {
   selectedCurrentVersionId: string;
   onSelectPreviousVersion: (id: string) => void;
   onSelectCurrentVersion: (id: string) => void;
+  onRestoreVersion?: () => void;
 }
 
 export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
@@ -38,7 +39,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
   previousTimestamp,
   previousChangeSummary,
   isPreviousCurrent = false,
-  currentActor = 'Logaprasanth (User)',
+  currentActor = 'You',
   currentTimestamp = 'Active Current State',
   currentStatus = 'Live editable source of truth in workspace',
   isCurrentReal = true,
@@ -47,6 +48,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
   selectedCurrentVersionId,
   onSelectPreviousVersion,
   onSelectCurrentVersion,
+  onRestoreVersion,
 }) => {
   const diffResult = useMemo(
     () => computeVersionDiff(previousContent, currentContent, previousTitle, currentTitle),
@@ -165,9 +167,16 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
           {/* Previous Header Info */}
           <div className="pb-2 border-b border-neutral-200 dark:border-neutral-800 space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-700">
-                Previous Version
-              </span>
+                            <div className="flex items-center space-x-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-700">
+                  Previous Version
+                </span>
+                {!isPreviousCurrent && onRestoreVersion && (
+                  <button onClick={onRestoreVersion} className="px-2 py-0.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded text-[10px] font-bold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700">
+                    Restore this version
+                  </button>
+                )}
+              </div>
 
               {/* Compact Dropdown Selector */}
               <div className="relative inline-flex items-center">

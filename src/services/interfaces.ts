@@ -84,6 +84,9 @@ export interface IClassHistoryService {
 export interface ISchemaHistoryService {
   getVersions(): Promise<SchemaVersion[]>;
   recordVersion(version: Omit<SchemaVersion, 'id' | 'versionNumber'>): Promise<SchemaVersion>;
+  listVersions(runId: string): Promise<any[]>;
+  getVersion(runId: string, n: number): Promise<any>;
+  restoreVersion(runId: string, n: number, userName: string): Promise<any>;
 }
 
 

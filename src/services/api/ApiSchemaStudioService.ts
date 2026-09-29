@@ -7,7 +7,8 @@ export class ApiSchemaStudioService {
     classes: any[],
     runId: string,
     onProgress?: (step: any) => void,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    userName: string = 'User'
   ): Promise<any> {
     if (onProgress) {
       onProgress({ id: 'schema-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate schema request' });
@@ -15,7 +16,7 @@ export class ApiSchemaStudioService {
 
     const response = await fetch(`${API_URL}/generate/schema`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Name': userName },
       body: JSON.stringify({
         requirements,
         classes,
@@ -45,10 +46,10 @@ export class ApiSchemaStudioService {
     return await response.json();
   }
 
-  async updateSchema(runId: string, source: string, changeSummary: string, rawJson: string): Promise<any> {
+  async updateSchema(runId: string, source: string, changeSummary: string, rawJson: string, userName: string = 'User'): Promise<any> {
     const response = await fetch(`${API_URL}/schema/${runId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Name': userName },
       body: JSON.stringify({
         source,
         changeSummary,
@@ -73,9 +74,10 @@ export class ApiSchemaStudioService {
     return await response.json();
   }
 
-  async restoreSchemaVersion(runId: string, versionId: string): Promise<any> {
+  async restoreSchemaVersion(runId: string, versionId: string, userName: string = 'User'): Promise<any> {
     const response = await fetch(`${API_URL}/schema/${runId}/versions/${versionId}/restore`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'X-User-Name': userName }
     });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));

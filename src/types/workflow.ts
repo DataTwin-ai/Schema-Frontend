@@ -65,6 +65,8 @@ export interface BusinessInput {
 
 export interface SchemaGenerationWorkflow {
   id: string;
+  displayName?: string;
+  lastDraftSavedAt?: string;
   title: string;
   domain: string;
   stage: WorkflowStage;

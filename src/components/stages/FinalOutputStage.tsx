@@ -15,6 +15,7 @@ import {
   Play
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
+import { SaveDraftButton } from '../common/SaveDraftButton';
 import { GenerationProcessingModal } from '../layout/GenerationProcessingModal';
 
 export const FinalOutputStage: React.FC = () => {

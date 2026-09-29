@@ -4,6 +4,9 @@
 import React, { useEffect, useState } from 'react';
 import { FileText, Loader2, AlertCircle, X, Lock } from 'lucide-react';
 import { API_URL } from '../../services/api/config';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 
 interface InputFile {
   name: string;
@@ -20,6 +23,20 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const selectedFile = files.find((f) => f.name === selectedFileName);
+
+  useEffect(() => {
+    if (selectedFile) {
+      setEditContent(selectedFile.content);
+      setIsEditing(false);
+    }
+  }, [selectedFile]);
+
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,9 +100,30 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
     };
   }, [isOpen, files.length]);
 
+  
+  const handleSave = async () => {
+    if (!selectedFile) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/simulation/simulation-inputs/${selectedFile.name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editContent })
+      });
+      if (!response.ok) throw new Error('Failed to save file');
+      
+      // Update local state
+      setFiles(prev => prev.map(f => f.name === selectedFile.name ? { ...f, content: editContent } : f));
+      setIsEditing(false);
+    } catch (err: any) {
+      alert(err.message || 'Error saving file');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (!isOpen) return null;
 
-  const selectedFile = files.find((f) => f.name === selectedFileName);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6 lg:p-8">
@@ -172,12 +210,52 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
                         <span>{selectedFile.name}</span>
                       </span>
                       <div className="flex items-center space-x-3 text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
-                        <span>{selectedFile.content.split('\n').length.toLocaleString()} lines</span>
-                        <span>{selectedFile.content.length.toLocaleString()} chars</span>
+                        {!isEditing ? (
+                          <>
+                            <span>{selectedFile.content.split('\n').length.toLocaleString()} lines</span>
+                            <span>{selectedFile.content.length.toLocaleString()} chars</span>
+                            <button 
+                              onClick={() => setIsEditing(true)}
+                              className="ml-2 px-2.5 py-1 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white rounded text-xs font-sans font-semibold transition-colors"
+                            >
+                              Edit
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button 
+                              onClick={() => { setIsEditing(false); setEditContent(selectedFile.content); }}
+                              disabled={isSaving}
+                              className="px-2.5 py-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 rounded text-xs font-sans transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={handleSave}
+                              disabled={isSaving}
+                              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-sans font-semibold transition-colors flex items-center space-x-1"
+                            >
+                              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                              <span>Save</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-5 text-neutral-800 dark:text-neutral-300 font-mono text-xs leading-relaxed">
-                      <pre className="whitespace-pre-wrap break-words">{selectedFile.content}</pre>
+                    <div className="flex-1 overflow-y-auto p-5 text-neutral-800 dark:text-neutral-300 font-mono text-xs leading-relaxed flex flex-col">
+                      {!isEditing ? (
+                        <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap break-words prose-p:font-mono prose-p:text-xs prose-li:font-mono prose-li:text-xs prose-table:text-xs prose-headings:font-sans">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {selectedFile.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <textarea
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          className="flex-1 w-full h-full min-h-[400px] bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded p-3 text-neutral-900 dark:text-neutral-100 resize-none outline-none"
+                        />
+                      )}
                     </div>
                   </>
                 ) : (

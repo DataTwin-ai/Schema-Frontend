@@ -20,6 +20,9 @@ import {
 import { StageActionBar } from '../layout/StageActionBar';
 import { SupportingDocumentsSection } from './SupportingDocumentsSection';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 
 export const BusinessInputStage: React.FC = () => {
   const { 
@@ -28,7 +31,7 @@ export const BusinessInputStage: React.FC = () => {
     generateBusinessRequirement,
     generateRequirements,
     isGeneratingModalOpen
-  } = useWorkflow();
+  , setStage} = useWorkflow();
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   
@@ -99,7 +102,7 @@ export const BusinessInputStage: React.FC = () => {
               {/* Primary Action: Generate Requirements */}
               <button
                 type="button"
-                onClick={generateRequirements}
+                onClick={() => generateRequirements(false)}
                 disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                 title="Accept Business Requirement and generate structured requirements"
@@ -200,7 +203,13 @@ export const BusinessInputStage: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={generateRequirements}
+                  onClick={() => {
+                    if (workflow.requirements && workflow.generationStatus === 'completed') {
+                      setStage('requirements');
+                    } else {
+                      generateRequirements(true);
+                    }
+                  }}
                   disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                   className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
                 >
@@ -298,9 +307,11 @@ export const BusinessInputStage: React.FC = () => {
                   <div className="text-xs text-neutral-500 dark:text-neutral-400">
                     File: <span className="font-mono text-neutral-900 dark:text-neutral-100">{knowledgeData.filename}</span>
                   </div>
-                  <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-4 rounded-lg border border-neutral-200 dark:border-neutral-800 whitespace-pre-wrap overflow-x-auto">
-                    {knowledgeData.content}
-                  </pre>
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-4 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-x-auto prose-h2:text-sm prose-h3:text-xs prose-p:text-xs prose-li:text-xs prose-table:text-xs">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {knowledgeData.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ) : null}
             </div>
