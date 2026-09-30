@@ -167,7 +167,7 @@ export const AssistantPanel: React.FC = () => {
           >
             <div className="flex items-center space-x-1 text-[10px] text-neutral-400 px-1">
               <span>{msg.sender === 'user' ? 'You' : 'DataTwin'}</span>
-              <span>•</span>
+              <span>\u2022</span>
               <span>{msg.timestamp}</span>
             </div>
 

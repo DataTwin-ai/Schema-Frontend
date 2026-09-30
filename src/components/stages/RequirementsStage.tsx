@@ -270,7 +270,7 @@ const RequirementRow: React.FC<RequirementRowProps> = ({
 
               <div className="flex items-center space-x-2.5 shrink-0">
                 <span className="text-[10px] font-mono text-neutral-400 dark:text-neutral-500 whitespace-nowrap">
-                  {lineCount} {lineCount === 1 ? 'line' : 'lines'} · {charCount.toLocaleString()} chars
+                  {lineCount} {lineCount === 1 ? 'line' : 'lines'} \u00B7 {charCount.toLocaleString()} chars
                 </span>
 
                 <button
@@ -327,7 +327,7 @@ const RequirementRow: React.FC<RequirementRowProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">{item.code}</span> · {item.title}
+                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">{item.code}</span> \u00B7 {item.title}
               </div>
             </div>
 

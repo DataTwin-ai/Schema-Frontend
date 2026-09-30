@@ -307,7 +307,7 @@ export const SupportingDocumentsSection: React.FC = () => {
             <span>Upload or drop files</span>
           </div>
           <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1">
-            CSV · XLSX · JSON · PDF
+            CSV \u00B7 XLSX \u00B7 JSON \u00B7 PDF
           </p>
         </div>
       )}
@@ -343,9 +343,9 @@ export const SupportingDocumentsSection: React.FC = () => {
                       </span>
                       <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-mono flex items-center space-x-1.5">
                         <span>{typeLabel}</span>
-                        <span>·</span>
+                        <span>\u00B7</span>
                         <span>{sizeLabel}</span>
-                        <span>·</span>
+                        <span>\u00B7</span>
                         <span className="text-neutral-600 dark:text-neutral-400 font-medium flex items-center space-x-0.5">
                           <Check className="h-2.5 w-2.5 inline" />
                           <span>Ready</span>

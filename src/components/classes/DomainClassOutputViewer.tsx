@@ -136,7 +136,7 @@ export const DomainClassOutputViewer: React.FC<DomainClassOutputViewerProps> = (
                     <RequirementCategoryChip category={comp.type} />
                   </td>
                   <td className="py-2 px-4 font-mono text-xs text-neutral-800 dark:text-neutral-200">
-                    {comp.expression || comp.sourceColumn || '—'}
+                    {comp.expression || comp.sourceColumn || '\u2014'}
                   </td>
                   <td className="py-2 px-4 text-xs text-neutral-600 dark:text-neutral-400">
                     {comp.description || (comp.sourceClass ? `Fetched from class ${comp.sourceClass}` : 'Calculated component value')}

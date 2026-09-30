@@ -323,7 +323,7 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
                   <span>Upload or drop files</span>
                 </div>
                 <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">
-                  CSV · XLSX · JSON · PDF · TXT · DOCX
+                  CSV \u00B7 XLSX \u00B7 JSON \u00B7 PDF \u00B7 TXT \u00B7 DOCX
                 </p>
               </div>
 

@@ -266,7 +266,7 @@ export const FinalOutputStage: React.FC = () => {
                  <div className="flex flex-wrap gap-1.5 pt-1">
                     {Object.entries(dsMap).map(([k,v]: any) => (
                        <span key={k} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
-                         {k} · {v.length ? v.length : v}
+                         {k} \u00B7 {v.length ? v.length : v}
                        </span>
                     ))}
                  </div>

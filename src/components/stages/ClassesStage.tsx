@@ -143,7 +143,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
         return {
           id: 'current',
           isCurrent: true,
-          title: `Class #${item.classNumber} · ${currentData.className}`,
+          title: `Class #${item.classNumber} \u00B7 ${currentData.className}`,
           content: formatClassSpecification(currentData as any),
           actor: userName,
           timestamp: isEditing ? 'Active Current State (Unsaved)' : 'Saved State',
@@ -156,7 +156,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
         return {
           id: hist.id,
           isCurrent: false,
-          title: hist.title || `Class #${item.classNumber} · ${hist.className}`,
+          title: hist.title || `Class #${item.classNumber} \u00B7 ${hist.className}`,
           content: hist.specification || formatClassSpecification({
             className: hist.className,
             datasource: hist.datasource,
@@ -172,7 +172,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
       return {
         id: 'current',
         isCurrent: true,
-        title: `Class #${item.classNumber} · ${item.className}`,
+        title: `Class #${item.classNumber} \u00B7 ${item.className}`,
         content: formatClassSpecification(item),
         actor: userName,
         timestamp: 'Active Current State',
@@ -492,7 +492,7 @@ const ClassRow: React.FC<ClassRowProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">Class #{item.classNumber}</span> · {item.className}
+                <span className="font-mono font-semibold text-neutral-700 dark:text-neutral-300">Class #{item.classNumber}</span> \u00B7 {item.className}
               </div>
             </div>
 

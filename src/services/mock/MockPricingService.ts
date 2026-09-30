@@ -20,8 +20,8 @@ export class MockPricingService implements IPricingService {
       return {
         amount: 0,
         currency: 'INR',
-        currencySymbol: '₹',
-        formattedAmount: '—',
+        currencySymbol: '\u20B9',
+        formattedAmount: '\u2014',
         isEstimate: true,
         source: 'DataTwin Standard Tier SCDP Pricing',
         lastUpdated: new Date().toISOString(),
@@ -39,8 +39,8 @@ export class MockPricingService implements IPricingService {
     return {
       amount: baseAmount,
       currency: 'INR',
-      currencySymbol: '₹',
-      formattedAmount: `₹${baseAmount.toFixed(2)}`,
+      currencySymbol: '\u20B9',
+      formattedAmount: `\u20B9${baseAmount.toFixed(2)}`,
       isEstimate: true,
       source: 'DataTwin Standard Tier SCDP Pricing',
       lastUpdated: new Date().toISOString(),

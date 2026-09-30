@@ -72,7 +72,7 @@ export class MockAssistantService implements IAssistantService {
       if (lower.includes('dependency') || lower.includes('relationship')) {
         return {
           message:
-            'The class dependencies cascade as follows:\n- **Class 2 (`CostAllocationMaster`)** → **Class 3 (`POCostAllocation1`)**\n- **Class 3** → **Class 4 (`TCostAllocationValue`)** & **Class 5 (`POCostAllocation`)**\n- **Class 1 (`PO_ItemCalculation`)** → **Class 5 (`POCostAllocation`)** & **Class 7 (`POWF`)**\n- **Class 3 & Class 6 (`AP`)** → **Class 7 (`POWF`)**.',
+            'The class dependencies cascade as follows:\n- **Class 2 (`CostAllocationMaster`)** \u2192 **Class 3 (`POCostAllocation1`)**\n- **Class 3** \u2192 **Class 4 (`TCostAllocationValue`)** & **Class 5 (`POCostAllocation`)**\n- **Class 1 (`PO_ItemCalculation`)** \u2192 **Class 5 (`POCostAllocation`)** & **Class 7 (`POWF`)**\n- **Class 3 & Class 6 (`AP`)** \u2192 **Class 7 (`POWF`)**.',
           suggestedActions: [
             { label: 'Generate Full Schema', actionType: 'jump-to-stage', payload: 'schema' },
           ],

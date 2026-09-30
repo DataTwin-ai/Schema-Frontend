@@ -233,7 +233,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                 Specification & Details
               </label>
               <span className="text-[10px] font-mono text-neutral-400 dark:text-neutral-500">
-                {previousContent.split('\n').length} lines · {previousContent.length.toLocaleString()} chars
+                {previousContent.split('\n').length} lines \u00B7 {previousContent.length.toLocaleString()} chars
               </span>
             </div>
             <div className="min-h-[140px] max-h-[420px] overflow-y-auto bg-white dark:bg-neutral-950 p-3 text-xs font-mono text-neutral-800 dark:text-neutral-200 rounded-lg border border-neutral-200 dark:border-neutral-800 leading-relaxed select-text">
@@ -306,7 +306,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
                 Specification & Details
               </label>
               <span className="text-[10px] font-mono text-neutral-400 dark:text-neutral-500">
-                {currentContent.split('\n').length} lines · {currentContent.length.toLocaleString()} chars
+                {currentContent.split('\n').length} lines \u00B7 {currentContent.length.toLocaleString()} chars
               </span>
             </div>
             <div className="min-h-[140px] max-h-[420px] overflow-y-auto bg-neutral-50/80 dark:bg-neutral-950 p-3 text-xs font-mono text-neutral-900 dark:text-neutral-100 rounded-lg border border-neutral-200 dark:border-neutral-800 leading-relaxed select-text">

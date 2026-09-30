@@ -28,7 +28,7 @@ export const ClassViewModal: React.FC<ClassViewModalProps> = ({ isOpen, onClose,
             </div>
             <div>
               <h3 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center space-x-2">
-                <span>Class #{cls.classNumber} · {cls.className}</span>
+                <span>Class #{cls.classNumber} \u00B7 {cls.className}</span>
               </h3>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                 Generated domain class specification & output values

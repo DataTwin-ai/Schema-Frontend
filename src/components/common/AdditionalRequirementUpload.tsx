@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useRef, useState } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
@@ -136,7 +136,7 @@ export const AdditionalRequirementUpload: React.FC<AdditionalRequirementUploadPr
                     <span className="px-1.5 py-0.2 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-mono">
                       {req.sourceScreen}
                     </span>
-                    <span>• {req.content.length} chars</span>
+                    <span>\u2022 {req.content.length} chars</span>
                   </div>
                 </div>
                 <button

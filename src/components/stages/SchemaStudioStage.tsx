@@ -149,6 +149,54 @@ export const SchemaStudioStage: React.FC = () => {
   const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const classTreeNodes = useMemo(() => {
+    if (!workflow.schema) return [];
+    const payload = workflow.schema;
+    if (payload.classes && payload.classes.length > 0 && payload.classes.every((c: any) => c.schema)) {
+      return payload.classes.slice().sort((a: any, b: any) => a.classNo - b.classNo).map((c: any) => ({
+        title: `#${c.classNo} ${c.className}`,
+        technicalName: c.schema.technicalName || `#SchemaClass#${c.classNo}`,
+        children: c.schema.children || []
+      }));
+    }
+    // Fallback
+    console.warn('Schema classes payload is empty or incomplete; using rawJson fallback parsing.');
+    try {
+      const parsed = JSON.parse(payload.rawJson);
+      const schemaClass = parsed[0]?.children?.find((c: any) => c.technicalName === 'SchemaClass');
+      if (schemaClass && Array.isArray(schemaClass.children)) {
+        return schemaClass.children.map((child: any, idx: number) => {
+          const nameNode = child.children?.find((c: any) => c.technicalName === 'SchemaName');
+          return {
+            title: `#${idx + 1} ${nameNode?.val || 'Unknown'}`,
+            technicalName: child.technicalName || `#SchemaClass#${idx + 1}`,
+            children: child.children || []
+          };
+        });
+      }
+    } catch (e) {
+      console.error('Fallback parsing failed', e);
+    }
+    return [];
+  }, [workflow.schema]);
+
+  // Handle default expansion
+  useEffect(() => {
+    if (classTreeNodes.length > 0) {
+      setCollapsedNodes(prev => {
+        if (Object.keys(prev).length === 0) {
+          const newState: Record<string, boolean> = {};
+          classTreeNodes.forEach((node: any, idx: number) => {
+            const key = `root-${idx}-${node.technicalName || node.title}`;
+            newState[key] = idx !== 0; // Collapsed if not the first node
+          });
+          return newState;
+        }
+        return prev;
+      });
+    }
+  }, [classTreeNodes]);
+
 
   
   useEffect(() => {
@@ -339,16 +387,21 @@ if (isLoading) {
   };
 
   // Render tree node recursively
-  const renderTreeNode = (node: SchemaTreeNode, path: string, depth = 0, classIndex = 0) => {
-    const key = `${path}-${node.technicalName || node.title}`;
+  const renderTreeNode = (rawNode: any, path: string, depth = 0, classIndex = 0) => {
+    const nodeTitle = rawNode.title ?? rawNode.technicalName ?? '(unnamed)';
+    const nodeVal = rawNode.val;
+    const nodeChildren = Array.isArray(rawNode.children) ? rawNode.children : [];
+    
+    const key = `${path}-${rawNode.technicalName || nodeTitle}`;
     const isCollapsed = !!collapsedNodes[key];
-    const hasChildren = node.children && node.children.length > 0;
+    const hasChildren = nodeChildren.length > 0;
     
     // Filter matching
+    const valString = String(nodeVal ?? '');
     const matchesSearch = !searchQuery || 
-      node.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      node.technicalName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (node.val && node.val.toLowerCase().includes(searchQuery.toLowerCase()));
+      nodeTitle.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      (rawNode.technicalName && String(rawNode.technicalName).toLowerCase().includes(searchQuery.toLowerCase())) || 
+      valString.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (searchQuery && !matchesSearch && !hasChildren) {
       return null;
@@ -370,26 +423,26 @@ if (isLoading) {
               <ChevronDown className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 shrink-0" />
             )
           ) : (
-            <span className="h-3.5 w-3.5 flex items-center justify-center text-neutral-400 text-[10px] shrink-0">ÔÇó</span>
+            <span className="h-3.5 w-3.5 flex items-center justify-center text-neutral-400 text-[10px] shrink-0">{'\u2022'}</span>
           )}
 
           <span
             className={`${
-              node.title.startsWith('#SchemaClass')
+              (nodeTitle).startsWith('#SchemaClass')
                 ? 'text-neutral-900 dark:text-neutral-100 font-bold'
-                : node.title.startsWith('#Components')
+                : (nodeTitle).startsWith('#Components')
                 ? 'text-neutral-800 dark:text-neutral-200 font-semibold'
-                : node.title.startsWith('#Conditions')
+                : (nodeTitle).startsWith('#Conditions')
                 ? 'text-neutral-700 dark:text-neutral-300 font-semibold'
                 : hasChildren
                 ? 'text-neutral-800 dark:text-neutral-200'
                 : 'text-neutral-600 dark:text-neutral-400'
             }`}
           >
-            {node.title}
+            {nodeTitle}
           </span>
 
-          {node.val !== undefined && (
+          {nodeVal !== undefined && (
             inlineEditing?.path === key ? (
               <input 
                 type="text" 
@@ -398,32 +451,32 @@ if (isLoading) {
                 value={inlineEditing.val}
                 onChange={(e) => setInlineEditing({ ...inlineEditing, val: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleTreeInlineSave(key, inlineEditing.val, node.title, classIndex);
+                  if (e.key === 'Enter') handleTreeInlineSave(key, inlineEditing.val, nodeTitle, classIndex);
                   if (e.key === 'Escape') setInlineEditing(null);
                 }}
                 onBlur={() => setInlineEditing(null)}
               />
             ) : (
               <span 
-                onDoubleClick={(e) => { e.stopPropagation(); setInlineEditing({ path: key, val: node.val || '' }); }}
+                onDoubleClick={(e) => { e.stopPropagation(); setInlineEditing({ path: key, val: nodeVal || '' }); }}
                 className="font-mono text-[11px] text-neutral-600 dark:text-neutral-400 truncate max-w-xs cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded px-1"
                 title="Double-click to edit"
               >
-                : &quot;{node.val}&quot;
+                : &quot;{nodeVal}&quot;
               </span>
             )
           )}
 
-          {node.equality && (
+          {rawNode.equality && (
             <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">
-              {node.equality}
+              {rawNode.equality}
             </span>
           )}
         </div>
 
         {hasChildren && !isCollapsed && (
           <div className="border-l border-neutral-200 dark:border-neutral-800/80 ml-3">
-            {node.children!.map((child, idx) => renderTreeNode(child, `${key}-${idx}`, depth + 1))}
+            {nodeChildren.map((child: any, idx: number) => renderTreeNode(child, `${key}-${idx}`, depth + 1, classIndex))}
           </div>
         )}
       </div>
@@ -558,7 +611,7 @@ if (isLoading) {
               <span>{saveStatus.message}</span>
             </div>
             <button onClick={() => setSaveStatus({ type: null, message: '' })} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-white">
-              Ô£ò
+              \u2713
             </button>
           </div>
         )}
@@ -657,8 +710,8 @@ if (isLoading) {
                     </p>
                   </div>
                 ) : (
-                  (workflow.schema.classes || []).map((rootNode, idx) =>
-                    renderTreeNode(rootNode, `root-${idx}`, 0)
+                  classTreeNodes.map((rootNode: any, idx: number) =>
+                    renderTreeNode(rootNode, `root-${idx}`, 0, idx)
                   )
                 )}
               </div>
@@ -681,7 +734,7 @@ if (isLoading) {
                 
                 <div className="flex items-center space-x-2.5">
                   <span className="text-[10px] font-mono text-neutral-500 dark:text-neutral-400">
-                    {(editedSchemaJson.length / 1024).toFixed(1)} KB ÔÇó {isEditing ? 'Editing' : 'Read-Only'}
+                    {(editedSchemaJson.length / 1024).toFixed(1)} KB \u2022 {isEditing ? 'Editing' : 'Read-Only'}
                   </span>
 
                   {!isEditing ? (
@@ -741,8 +794,8 @@ if (isLoading) {
             <div className="pt-2.5 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
               <span>
                 {isEditing
-                  ? 'Editing enabled ÔÇó Click Save to commit changes to workspace model'
-                  : 'Read-only view ÔÇó Click Edit above to modify JSON'}
+                  ? 'Editing enabled \u2022 Click Save to commit changes to workspace model'
+                  : 'Read-only view \u2022 Click Edit above to modify JSON'}
               </span>
               <span className="font-mono text-neutral-500 dark:text-neutral-400">Deterministic SCDP Model</span>
             </div>

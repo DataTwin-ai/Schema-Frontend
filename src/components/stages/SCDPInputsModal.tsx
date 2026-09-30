@@ -189,7 +189,7 @@ export const SCDPInputsModal: React.FC<SCDPInputsModalProps> = ({ isOpen, onClos
                         <span>{file.name}</span>
                         {file.name === '00_Current_Requirements.txt' ? (
                           <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-[9px] font-bold text-blue-700 dark:text-blue-400 shrink-0 uppercase tracking-wider">
-                            Dynamic — this case
+                            Dynamic \u2014 this case
                           </span>
                         ) : (
                           <Lock className="h-3 w-3 text-neutral-400 shrink-0" />

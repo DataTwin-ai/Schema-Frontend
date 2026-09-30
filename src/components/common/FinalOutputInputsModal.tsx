@@ -305,7 +305,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
               <Database className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-neutral-900 dark:text-white">Final Output — Inputs</h2>
+              <h2 className="text-sm font-bold text-neutral-900 dark:text-white">Final Output \u2014 Inputs</h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Provide the execution context and event data to test the schema</p>
             </div>
           </div>
@@ -373,7 +373,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
                       <div className="flex flex-wrap gap-1.5 pt-1 border-t border-neutral-200 dark:border-neutral-800">
                          {Object.entries(dataSources).map(([k,v]) => (
                             <span key={k} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
-                              {k} · {v}
+                              {k} \u00B7 {v}
                             </span>
                          ))}
                       </div>

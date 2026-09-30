@@ -84,20 +84,20 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   const resolveOperationLabel = (): string => {
     if (activeOperation?.message) return activeOperation.message;
     if (propOperationLabel) return propOperationLabel;
-    if (generationOperationLabel && generationOperationLabel !== 'Generating…') {
+    if (generationOperationLabel && generationOperationLabel !== 'Generating\u2026') {
       return generationOperationLabel;
     }
     switch (workflow.stage) {
       case 'business-input':
         return workflow.businessInput.isBusinessRequirementGenerated
-          ? 'Generating Requirements…'
-          : 'Generating Business Requirement…';
+          ? 'Generating Requirements\u2026'
+          : 'Generating Business Requirement\u2026';
       case 'requirements':
-        return 'Generating Schema Classes…';
+        return 'Generating Schema Classes\u2026';
       case 'classes':
-        return 'Generating Schema…';
+        return 'Generating Schema\u2026';
       default:
-        return generationOperationLabel || 'Generating…';
+        return generationOperationLabel || 'Generating\u2026';
     }
   };
 

@@ -177,8 +177,8 @@ const initialWorkflow: SchemaGenerationWorkflow = {
 const initialGenerationCost: GenerationCost = {
   amount: 0,
   currency: 'INR',
-  currencySymbol: '₹',
-  formattedAmount: '—',
+  currencySymbol: '\u20B9',
+  formattedAmount: '\u2014',
   isEstimate: true,
   source: 'DataTwin Standard Tier SCDP Pricing',
 };
@@ -189,7 +189,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [workflow, setWorkflow] = useState<SchemaGenerationWorkflow>(initialWorkflow);
   const [editedSchemaJson, setEditedSchemaJson] = useState<string>('');
   const [isGeneratingModalOpen, setIsGeneratingModalOpen] = useState<boolean>(false);
-  const [generationOperationLabel, setGenerationOperationLabel] = useState<string>('Generating…');
+  const [generationOperationLabel, setGenerationOperationLabel] = useState<string>('Generating\u2026');
   const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [generationCost, setGenerationCost] = useState<GenerationCost>(initialGenerationCost);
 
@@ -307,7 +307,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     []
   );
 
-  // Assistant Messages — Starts empty, responded ONLY upon explicit user interaction
+  // Assistant Messages \u2014 Starts empty, responded ONLY upon explicit user interaction
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [isAssistantThinking, setIsAssistantThinking] = useState<boolean>(false);
 
@@ -523,7 +523,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
 
   // Generation 1: High-Level Business Requirement -> Detailed Business Requirement
   const generateBusinessRequirement = useCallback(async () => {
-    setGenerationOperationLabel('Generating Business Requirement…');
+    setGenerationOperationLabel('Generating Business Requirement\u2026');
     setIsGeneratingModalOpen(true);
     setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
@@ -552,7 +552,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
             operationId,
             type: 'generate-business-requirement',
             status: 'RUNNING',
-            message: 'Generating Business Requirement…'
+            message: 'Generating Business Requirement\u2026'
           });
         }
       );
@@ -592,7 +592,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
 
   // Generation 2: Reviewed Business Requirement -> Structured Requirements
   const generateRequirements = useCallback(async (navigate: boolean = true) => {
-    setGenerationOperationLabel('Generating Requirements…');
+    setGenerationOperationLabel('Generating Requirements\u2026');
     setIsGeneratingModalOpen(true);
     setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
@@ -621,7 +621,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
             operationId,
             type: 'generate-requirements',
             status: 'RUNNING',
-            message: 'Generating Requirements…'
+            message: 'Generating Requirements\u2026'
           });
         },
       );
@@ -716,7 +716,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
   const generateSchema = useCallback(async () => {
     if (workflow.generationStatus === 'generating') return;
     if (!workflow.requirements || !workflow.classes) return;
-    setGenerationOperationLabel('Generating Schema…');
+    setGenerationOperationLabel('Generating Schema\u2026');
     setIsGeneratingModalOpen(true);
     setWorkflow((prev: SchemaGenerationWorkflow) => ({
       ...prev,
@@ -747,7 +747,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
             operationId,
             type: 'generate-schema',
             status: 'RUNNING',
-            message: 'Generating Schema…'
+            message: 'Generating Schema\u2026'
           });
         },
         additionalReqStrs
@@ -979,7 +979,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
       classId: cls.id,
       classNumber: cls.classNumber,
       className: cls.className,
-      title: `Class #${cls.classNumber} · ${cls.className}`,
+      title: `Class #${cls.classNumber} \u00B7 ${cls.className}`,
       purpose: cls.purpose,
       datasource: cls.datasource,
       grain: cls.grain,
@@ -1079,7 +1079,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         recordSchemaVersion({
           schemaGroupName: workflow.schema.schemaGroupName || 'SCDP Generated Schema',
           rawJson: workflow.schema.rawJson,
-          timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) + ' · ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) + ' \u00B7 ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
           actor: 'Logaprasanth (User)',
           changeSummary: 'Direct edits saved in Schema Studio',
         });

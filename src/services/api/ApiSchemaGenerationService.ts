@@ -50,7 +50,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
 
   private buildSchemaModel(rawSchema: any, classes: SchemaClass[]): SchemaModel {
     // Build SchemaTreeNode[] from any JSON value, recursively.
-    // This handles any structure the backend returns — SCDP objects, arrays, scalars.
+    // This handles any structure the backend returns \u2014 SCDP objects, arrays, scalars.
     const buildTreeFromJson = (value: any, label: string, depth = 0): SchemaTreeNode => {
       if (value === null || value === undefined) {
         return {
@@ -137,7 +137,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     let rootNodes: SchemaTreeNode[];
 
     if (hasNativeTreeStructure) {
-      // Backend already returns proper tree nodes — map directly preserving structure
+      // Backend already returns proper tree nodes \u2014 map directly preserving structure
       const mapTreeNodes = (nodes: any[]): SchemaTreeNode[] => {
         if (!nodes || !Array.isArray(nodes)) return [];
         return nodes.map(node => ({
@@ -151,7 +151,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       };
       rootNodes = mapTreeNodes(rawRoot);
     } else {
-      // Backend returns raw SCDP JSON — build tree dynamically from the root array
+      // Backend returns raw SCDP JSON \u2014 build tree dynamically from the root array
       rootNodes = rawRoot.map((item, idx) => {
         const label =
           item?.title ||
