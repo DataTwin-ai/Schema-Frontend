@@ -63,7 +63,31 @@ export interface BusinessInput {
   additionalInstructions: string;
 }
 
+
+export interface ClassPlanTrigger {
+  id: string;
+  description?: string;
+  included?: boolean;
+  votes?: number;
+  totalVotes?: number;
+}
+
+export interface PlannedClass {
+  order: number;
+  className: string;
+  datasource: string;
+  triggerId: string;
+  evidenceQuote?: string;
+}
+
+export interface ClassPlan {
+  locked?: boolean;
+  plannedClasses: PlannedClass[];
+  uncertainTriggers?: ClassPlanTrigger[];
+}
+
 export interface SchemaGenerationWorkflow {
+
   id: string;
   displayName?: string;
   lastDraftSavedAt?: string;
@@ -74,6 +98,7 @@ export interface SchemaGenerationWorkflow {
   businessInput: BusinessInput;
   requirements?: RequirementsModel;
   classes?: SchemaClass[];
+  classPlan?: ClassPlan;
   schema?: SchemaModel;
   additionalInformation: AdditionalInformation[];
   additionalRequirements?: AdditionalRequirement[];

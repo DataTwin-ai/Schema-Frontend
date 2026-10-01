@@ -4,6 +4,9 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useAuth } from '../../context/AuthContext';
 import { 
+  ChevronDown, 
+  ChevronRight, 
+  Lock, 
   ArrowRight, 
   ArrowLeft, 
   Edit3, 
@@ -558,6 +561,7 @@ export const ClassesStage: React.FC = () => {
     updateClass, 
     addClass, 
     removeClass, 
+    generateClasses,
     generateSchema,
     addAdditionalInformation,
     removeAdditionalInformation,
@@ -697,8 +701,38 @@ export const ClassesStage: React.FC = () => {
     setNewClassPurpose('');
   };
 
+
+  const [classPlanExpanded, setClassPlanExpanded] = useState(false);
+
+  const handleReplan = async () => {
+    if (!confirm("Build a new class plan? The class list may change.")) return;
+    try {
+      await fetch(`${API_URL}/runs/${workflow.runId}/class-plan/replan`, { method: 'POST' });
+      if (generateClasses) generateClasses();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const toggleTrigger = async (triggerId: string, included: boolean) => {
+    try {
+      const updatedTriggers = workflow.classPlan?.uncertainTriggers?.map(t => t.id === triggerId ? { ...t, included } : t) || [];
+      await fetch(`${API_URL}/runs/${workflow.runId}/class-plan`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uncertainTriggers: updatedTriggers })
+      });
+      if (confirm("Regenerate class prompts with the updated plan?")) {
+        if (generateClasses) generateClasses();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-full">
+
       {/* 1. Sticky Workspace Top Action Bar */}
       <StageActionBar
         title="Domain Classes Architecture"
@@ -792,6 +826,81 @@ export const ClassesStage: React.FC = () => {
             </div>
           </div>
         )}
+        
+        {workflow.classPlan && (
+          <div className="mb-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-3">
+            <div className="flex justify-between items-center cursor-pointer" onClick={() => setClassPlanExpanded(!classPlanExpanded)}>
+              <div className="flex items-center space-x-2 text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                 {workflow.classPlan.locked ? <Lock className="h-3.5 w-3.5 text-neutral-500" /> : <Layers className="h-3.5 w-3.5 text-neutral-500" />}
+                 <span>{workflow.classPlan.locked ? 'Plan locked \u00B7 ' : 'Plan \u00B7 '} {workflow.classPlan.plannedClasses?.length || 0} classes</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                 <button onClick={(e) => { e.stopPropagation(); handleReplan(); }} className="px-2 py-1 text-[10px] bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded font-semibold hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors">Re-plan</button>
+                 {classPlanExpanded ? <ChevronDown className="h-4 w-4 text-neutral-400" /> : <ChevronRight className="h-4 w-4 text-neutral-400" />}
+              </div>
+            </div>
+            {classPlanExpanded && (
+              <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800 text-xs">
+                <ul className="space-y-1 text-neutral-600 dark:text-neutral-400 font-mono">
+                   {workflow.classPlan.plannedClasses?.map(pc => (
+                      <li key={pc.className} title={pc.evidenceQuote || ''}>
+                         {pc.order} \u00B7 {pc.className} \u00B7 {pc.datasource} \u00B7 Trigger {pc.triggerId}
+                      </li>
+                   ))}
+                </ul>
+                {workflow.classPlan.uncertainTriggers && workflow.classPlan.uncertainTriggers.length > 0 && (
+                   <div className="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg text-amber-800 dark:text-amber-400">
+                     {workflow.classPlan.uncertainTriggers.map(t => (
+                       <div key={t.id} className="flex justify-between items-center mb-1 last:mb-0">
+                          <span>Trigger {t.id} ({t.description}) was chosen by {t.votes} of {t.totalVotes} plan votes \u2014 review.</span>
+                          <button onClick={() => toggleTrigger(t.id, !t.included)} className="px-2 py-1 bg-white dark:bg-neutral-900 rounded border border-amber-200 dark:border-amber-700 text-[10px] font-bold hover:bg-amber-100 dark:hover:bg-amber-800/30 transition-colors">
+                             {t.included ? 'Exclude' : 'Include'}
+                          </button>
+                       </div>
+                     ))}
+                   </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {workflow.generationStatus === 'error' && workflow.lastError?.includes('planMismatch') && (
+          <div className="mb-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800/30 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Plan Mismatch</h4>
+                <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">The generated classes did not match the locked class plan.</p>
+                <div className="grid grid-cols-2 gap-4 text-[10px] font-mono mb-3">
+                   <div>
+                     <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Planned classes</div>
+                     <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
+                        {workflow.classPlan?.plannedClasses?.map(c => <li key={c.className}>{c.className}</li>)}
+                     </ul>
+                   </div>
+                   <div>
+                     <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Generated classes</div>
+                     <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
+                        {workflow.classes?.map(c => <li key={c.className}>{c.className}</li>)}
+                     </ul>
+                   </div>
+                </div>
+                <button onClick={() => generateClasses && generateClasses()} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors">
+                  Try again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {workflow.generationStatus === 'error' && workflow.lastError?.includes('spec changed') && (
+          <div className="mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-3 flex items-center space-x-3 text-amber-800 dark:text-amber-400">
+             <AlertTriangle className="h-4 w-4 shrink-0" />
+             <span className="text-xs font-medium">The case spec changed, so a new class plan was built.</span>
+          </div>
+        )}
+
         {classes.map((cls) => {
           const versions = getClassVersions(cls.id);
           return (

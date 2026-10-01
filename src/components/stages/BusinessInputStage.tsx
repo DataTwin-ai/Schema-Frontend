@@ -102,7 +102,7 @@ export const BusinessInputStage: React.FC = () => {
               {/* Primary Action: Generate Requirements */}
               <button
                 type="button"
-                onClick={() => generateRequirements(!workflow.requirements || Object.keys(workflow.requirements).length === 0)}
+                onClick={() => generateRequirements(false)}
                 disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                 title="Accept Business Requirement and generate structured requirements"
@@ -204,13 +204,9 @@ export const BusinessInputStage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    if (workflow.requirements && workflow.generationStatus === 'completed') {
-                      setStage('requirements');
-                    } else {
-                      generateRequirements(true);
-                    }
+                    setStage('requirements');
                   }}
-                  disabled={!isGeneratedBRValid || isGeneratingModalOpen}
+                  disabled={!workflow.requirements || isGeneratingModalOpen}
                   className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
                 >
                   <span>Next</span>
