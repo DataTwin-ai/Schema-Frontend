@@ -11,6 +11,7 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { AssistantSuggestedAction } from '../../types';
+import ReactMarkdown from 'react-markdown';
 
 interface SuggestionChipProps {
   label: string;
@@ -167,7 +168,7 @@ export const AssistantPanel: React.FC = () => {
           >
             <div className="flex items-center space-x-1 text-[10px] text-neutral-400 px-1">
               <span>{msg.sender === 'user' ? 'You' : 'DataTwin'}</span>
-              <span>\u2022</span>
+              <span>{"\u2022"}</span>
               <span>{msg.timestamp}</span>
             </div>
 
@@ -178,7 +179,15 @@ export const AssistantPanel: React.FC = () => {
                   : 'bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200'
               }`}
             >
-              <div className="whitespace-pre-line">{msg.content}</div>
+              {msg.sender === 'user' ? (
+                <div className="whitespace-pre-line">{msg.content}</div>
+              ) : (
+                <div className="prose prose-sm dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none">
+                  <ReactMarkdown>
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
+              )}
 
               {/* Action suggestions attached to message */}
               {msg.suggestedActions && msg.suggestedActions.length > 0 && (
