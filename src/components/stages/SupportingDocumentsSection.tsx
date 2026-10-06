@@ -16,7 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const SUPPORTED_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.json', '.pdf'];
+const SUPPORTED_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.json', '.pdf', '.doc', '.docx'];
 
 const generateDefaultExtractedContent = (filename: string): string => {
   const lower = filename.toLowerCase();
@@ -87,7 +87,7 @@ export const SupportingDocumentsSection: React.FC = () => {
     const hasValidExt = SUPPORTED_EXTENSIONS.some((ext) => nameLower.endsWith(ext));
     if (hasValidExt) return true;
     const type = file.type.toLowerCase();
-    if (type.includes('csv') || type.includes('json') || type.includes('pdf') || type.includes('spreadsheet') || type.includes('excel')) {
+    if (type.includes('csv') || type.includes('json') || type.includes('pdf') || type.includes('spreadsheet') || type.includes('excel') || type.includes('word')) {
       return true;
     }
     return false;
@@ -100,7 +100,7 @@ export const SupportingDocumentsSection: React.FC = () => {
 
     for (const file of filesArray) {
       if (!isValidFileType(file)) {
-        setValidationError('Unsupported file type. Use CSV, XLSX, JSON, or PDF.');
+        setValidationError('Unsupported file type. Use CSV, XLSX, JSON, PDF, or Word documents.');
         continue;
       }
 
@@ -158,6 +158,8 @@ export const SupportingDocumentsSection: React.FC = () => {
     if (lower.endsWith('.pdf')) return 'application/pdf';
     if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
+    if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (lower.endsWith('.doc')) return 'application/msword';
     return 'application/octet-stream';
   };
 
@@ -215,6 +217,8 @@ export const SupportingDocumentsSection: React.FC = () => {
     if (name.endsWith('.xls')) return 'XLS';
     if (name.endsWith('.json')) return 'JSON';
     if (name.endsWith('.pdf')) return 'PDF';
+    if (name.endsWith('.docx')) return 'DOCX';
+    if (name.endsWith('.doc')) return 'DOC';
     return 'DOC';
   };
 
@@ -241,7 +245,7 @@ export const SupportingDocumentsSection: React.FC = () => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".csv,.xlsx,.xls,.json,.pdf,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        accept=".csv,.xlsx,.xls,.json,.pdf,.doc,.docx,text/csv,application/json,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         onChange={handleFileInputChange}
         className="hidden"
         aria-label="Upload supporting documents"
@@ -307,7 +311,7 @@ export const SupportingDocumentsSection: React.FC = () => {
             <span>Upload or drop files</span>
           </div>
           <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-1">
-            CSV \u00B7 XLSX \u00B7 JSON \u00B7 PDF
+            CSV \u00B7 XLSX \u00B7 JSON \u00B7 PDF \u00B7 DOCX
           </p>
         </div>
       )}

@@ -540,7 +540,7 @@ export const RequirementsStage: React.FC = () => {
           <>
             <SaveDraftButton />
             <button
-              onClick={generateClasses}
+              onClick={() => setIsGenerateModalOpen(true)}
               className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
               <span>Generate Classes</span>
@@ -908,8 +908,10 @@ export const RequirementsStage: React.FC = () => {
         isOpen={isGenerateModalOpen}
         onClose={() => setIsGenerateModalOpen(false)}
         onGenerate={(info) => {
-          if (info) {
-            addAdditionalInformation(info);
+          if (info && Array.isArray(info)) {
+            info.forEach(entry => addAdditionalInformation(entry));
+          } else if (info) {
+            addAdditionalInformation(info as any);
           }
           generateClasses();
         }}

@@ -11,17 +11,47 @@ export class ApiClassGenerationService implements IClassGenerationService {
     runId?: string,
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void,
-    additionalRequirements?: string[]
+    additionalRequirements?: string[],
+    additionalInformation?: any[]
   ): Promise<SchemaClass[]> {
     if (onProgress) {
       onProgress({ id: 'class-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate classes request' });
     }
 
-    const response = await fetch(`${API_URL}/generate/classes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requirements, runId, additionalRequirements }),
-    });
+    const hasFiles = additionalInformation?.some(info => info.files?.some((f: any) => f.rawFile));
+    
+    let fetchOptions: RequestInit;
+    
+    if (hasFiles || additionalInformation?.length) {
+      const formData = new FormData();
+      formData.append('requirements', JSON.stringify(requirements));
+      if (runId) formData.append('runId', runId);
+      if (additionalRequirements) formData.append('additionalRequirements', JSON.stringify(additionalRequirements));
+      
+      const infoMeta = additionalInformation!.map(info => ({
+        category: info.category,
+        content: info.content,
+        fileNames: info.files?.map((f: any) => f.name) || []
+      }));
+      formData.append('additionalInfo', JSON.stringify(infoMeta));
+
+      additionalInformation!.forEach(info => {
+        if (info.files) {
+          info.files.forEach((f: any) => {
+            if (f.rawFile) formData.append('files', f.rawFile, f.name);
+          });
+        }
+      });
+      fetchOptions = { method: 'POST', body: formData };
+    } else {
+      fetchOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements, runId, additionalRequirements }),
+      };
+    }
+
+    const response = await fetch(`${API_URL}/generate/classes`, fetchOptions);
 
     if (!response.ok) {
       if (response.status === 409) {

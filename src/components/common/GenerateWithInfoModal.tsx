@@ -13,19 +13,21 @@ import {
   Plus,
   ArrowRight,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
 import { AttachedInfoFile } from '../../types';
+
+interface AdditionalInfoEntry {
+  category: 'business' | 'finance' | 'technical' | 'rule' | 'constraint' | 'note';
+  content: string;
+  files: AttachedInfoFile[];
+}
 
 interface GenerateWithInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onGenerate: (additionalInfo?: {
-    category: 'business' | 'finance' | 'technical' | 'rule' | 'constraint' | 'note';
-    content: string;
-    files?: AttachedInfoFile[];
-    author?: string;
-  }) => void;
+  onGenerate: (additionalInfo?: AdditionalInfoEntry[]) => void;
   title?: string;
   generationLabel?: string;
 }
@@ -51,8 +53,11 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
   onClose,
   onGenerate,
   title = 'Do you want to add any additional information?',
-  generationLabel = 'Generate'
+  generationLabel = 'Proceed to Classes'
 }) => {
+  const [entries, setEntries] = useState<AdditionalInfoEntry[]>([]);
+  
+  // Current active draft entry
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [category, setCategory] = useState<'business' | 'finance' | 'technical' | 'rule' | 'constraint' | 'note'>('rule');
   const [content, setContent] = useState('');
@@ -64,6 +69,7 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
+      setEntries([]);
       setIsInfoExpanded(false);
       setContent('');
       setCategory('rule');
@@ -103,6 +109,7 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
         name: file.name,
         size: file.size,
         type: file.type || 'application/octet-stream',
+        rawFile: file,
       });
     }
 
@@ -140,27 +147,41 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
   const handleRemoveFile = (indexToRemove: number) => {
     setUploadedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
+  
+  const handleAddEntry = () => {
+    const hasContent = content.trim().length > 0;
+    const hasFiles = uploadedFiles.length > 0;
+    if (hasContent || hasFiles) {
+      setEntries(prev => [...prev, { category, content: content.trim(), files: uploadedFiles }]);
+      setContent('');
+      setCategory('rule');
+      setUploadedFiles([]);
+    }
+  };
+
+  const handleRemoveEntry = (idx: number) => {
+    setEntries(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const handleProceed = () => {
     const hasContent = content.trim().length > 0;
     const hasFiles = uploadedFiles.length > 0;
-
+    
+    let finalEntries = [...entries];
     if (isInfoExpanded && (hasContent || hasFiles)) {
-      onGenerate({
-        category,
-        content: content.trim(),
-        files: uploadedFiles.length > 0 ? uploadedFiles : undefined,
-        author: 'Logaprasanth (User)',
-      });
+      finalEntries.push({ category, content: content.trim(), files: uploadedFiles });
+    }
+
+    if (finalEntries.length > 0) {
+      onGenerate(finalEntries);
     } else {
       onGenerate();
     }
-
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 backdrop-blur-sm p-4 overflow-y-auto">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
@@ -172,7 +193,7 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
         aria-label="Upload files for additional information"
       />
 
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-lg p-5 shadow-2xl text-neutral-900 dark:text-neutral-100 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-lg p-5 shadow-2xl text-neutral-900 dark:text-neutral-100 space-y-4 animate-in fade-in zoom-in-95 duration-150 my-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
           <h3 className="text-xs font-bold flex items-center space-x-2 text-neutral-900 dark:text-white">
@@ -182,47 +203,73 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer p-1 rounded-md transition-colors"
-            title="Close dialog"
+            className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Informative Subtext */}
         <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
           You can provide optional specifications, business rules, or supporting files to guide generation, or proceed directly.
         </p>
 
-        {/* Collapsible / Expandable Additional Info Section */}
-        {!isInfoExpanded ? (
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setIsInfoExpanded(true)}
-              className="w-full p-3.5 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500 bg-neutral-50/50 hover:bg-neutral-50 dark:bg-neutral-950/40 dark:hover:bg-neutral-950 text-left flex items-center justify-between group transition-all cursor-pointer"
-            >
-              <div className="flex items-center space-x-2.5">
-                <div className="p-1.5 rounded-lg bg-neutral-200/70 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 group-hover:bg-neutral-300 dark:group-hover:bg-neutral-700 transition-colors">
-                  <Plus className="h-3.5 w-3.5" />
-                </div>
-                <div>
-                  <span className="text-xs font-semibold text-neutral-900 dark:text-white block">
-                    Add Additional Info
+        {/* Existing Entries */}
+        {entries.length > 0 && (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">Added Information</div>
+            {entries.map((entry, idx) => (
+              <div key={idx} className="flex justify-between items-start bg-neutral-50 dark:bg-neutral-800/50 p-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700/50">
+                <div className="space-y-1 overflow-hidden pr-2">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200">
+                    {entry.category}
                   </span>
-                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block mt-0.5">
-                    Enter custom constraints, rules, or attach reference files
-                  </span>
+                  {entry.content && (
+                    <p className="text-[11px] text-neutral-700 dark:text-neutral-300 truncate">
+                      {entry.content}
+                    </p>
+                  )}
+                  {entry.files.length > 0 && (
+                    <div className="flex items-center space-x-1 mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+                      <Paperclip className="h-3 w-3" />
+                      <span>{entry.files.length} file(s) attached</span>
+                    </div>
+                  )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveEntry(idx)}
+                  className="text-neutral-400 hover:text-rose-500 p-1"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <ChevronDown className="h-4 w-4 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-200 transition-colors shrink-0" />
-            </button>
+            ))}
           </div>
-        ) : (
-          <div className="space-y-3.5 pt-1 border-t border-neutral-100 dark:border-neutral-800">
+        )}
+
+        {/* Expander */}
+        {!isInfoExpanded && (
+          <button
+            type="button"
+            onClick={() => setIsInfoExpanded(true)}
+            className="w-full flex items-center justify-between p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 transition-all text-left group cursor-pointer"
+          >
+            <div className="flex items-center space-x-2">
+              <Plus className="h-4 w-4 text-neutral-500 group-hover:text-neutral-700 dark:group-hover:text-neutral-300" />
+              <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                Add {entries.length > 0 ? 'another entry' : 'Information (Optional)'}
+              </span>
+            </div>
+            <ChevronDown className="h-4 w-4 text-neutral-400 group-hover:text-neutral-600 dark:group-hover:text-neutral-300" />
+          </button>
+        )}
+
+        {/* Input Form */}
+        {isInfoExpanded && (
+          <div className="space-y-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
-                Additional Information
+              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">
+                New Entry
               </span>
               <button
                 type="button"
@@ -323,7 +370,7 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
                   <span>Upload or drop files</span>
                 </div>
                 <p className="text-[10px] text-neutral-400 dark:text-neutral-500 mt-0.5">
-                  CSV \u00B7 XLSX \u00B7 JSON \u00B7 PDF \u00B7 TXT \u00B7 DOCX
+                  CSV {'\u00B7'} XLSX {'\u00B7'} JSON {'\u00B7'} PDF {'\u00B7'} TXT {'\u00B7'} DOCX
                 </p>
               </div>
 
@@ -358,6 +405,17 @@ export const GenerateWithInfoModal: React.FC<GenerateWithInfoModalProps> = ({
                   ))}
                 </div>
               )}
+            </div>
+            
+            <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleAddEntry}
+                  disabled={content.trim().length === 0 && uploadedFiles.length === 0}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Entry
+                </button>
             </div>
           </div>
         )}

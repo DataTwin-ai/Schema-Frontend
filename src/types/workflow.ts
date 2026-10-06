@@ -36,6 +36,7 @@ export interface AttachedInfoFile {
   name: string;
   size?: number;
   type?: string;
+  rawFile?: File;
 }
 
 export interface AdditionalInformation {

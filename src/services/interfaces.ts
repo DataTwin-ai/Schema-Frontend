@@ -31,7 +31,7 @@ export interface IRequirementsGenerationService {
 }
 
 export interface IClassGenerationService {
-  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[]): Promise<SchemaClass[]>;
+  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[], additionalInformation?: any[]): Promise<SchemaClass[]>;
 }
 
 export interface ISchemaGenerationService {

@@ -16,22 +16,35 @@ export interface GenerationProcessingModalProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Safely extract a 0–100 integer percentage from the backend progress field.
- *  Backend sends `progress` as an object { current, total, percentage, … } or
- *  occasionally as a plain number. Never let the raw object reach JSX. */
 function extractPct(rawProgress: unknown): number {
   if (typeof rawProgress === 'number') {
     return Math.round(Math.min(100, Math.max(0, rawProgress)));
   }
   if (rawProgress && typeof rawProgress === 'object') {
     const p = rawProgress as Record<string, unknown>;
-    const raw =
-      typeof p.percentage === 'number'
-        ? p.percentage
-        : typeof p.current === 'number' && typeof p.total === 'number' && (p.total as number) > 0
-        ? ((p.current as number) / (p.total as number)) * 100
-        : 0;
-    return Math.round(Math.min(100, Math.max(0, raw)));
+    
+    // 1. Explicit percentage (if > 0)
+    if (typeof p.percentage === 'number' && p.percentage > 0) {
+      return Math.round(Math.min(100, Math.max(0, p.percentage)));
+    }
+    
+    // 2. Current / Total items
+    if (typeof p.current === 'number' && typeof p.total === 'number' && (p.total as number) > 0) {
+      return Math.round(Math.min(100, Math.max(0, ((p.current as number) / (p.total as number)) * 100)));
+    }
+    
+    // 3. Step / TotalSteps (Pipeline level)
+    if (typeof p.step === 'number' && typeof p.totalSteps === 'number' && (p.totalSteps as number) > 0) {
+      const basePct = ((p.step as number) / (p.totalSteps as number)) * 100;
+      // Subtract a little bit so it doesn't look instantly complete for the current step, 
+      // but ensure it never goes below 0.
+      return Math.round(Math.min(100, Math.max(0, basePct - (100 / (p.totalSteps as number) * 0.5))));
+    }
+    
+    // 4. If percentage was exactly 0 and no steps were provided
+    if (typeof p.percentage === 'number') {
+      return 0;
+    }
   }
   return 0;
 }
@@ -425,7 +438,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
                 <div
                   className="h-full rounded-full"
                   style={{
-                    width: `${pct}%`,
+                    width: `${Math.max(pct, 2)}%`,
                     background: 'linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)',
                     transition: 'width 300ms ease',
                   }}
@@ -444,10 +457,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
             )}
 
             {/* Elapsed · ETA */}
-            <p className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500 leading-snug">
-              Elapsed {formatDuration(elapsedSecs)}
-              {etaLine ? ` · ${etaLine}` : ''}
-            </p>
+            {/* Removed at user request */}
 
             {/* Stop-requested status */}
             {isStopRequested && (

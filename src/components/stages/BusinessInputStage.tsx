@@ -20,6 +20,7 @@ import {
 import { StageActionBar } from '../layout/StageActionBar';
 import { SupportingDocumentsSection } from './SupportingDocumentsSection';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -30,10 +31,13 @@ export const BusinessInputStage: React.FC = () => {
     updateBusinessInput, 
     generateBusinessRequirement,
     generateRequirements,
-    isGeneratingModalOpen
-  , setStage} = useWorkflow();
+    addAdditionalInformation,
+    isGeneratingModalOpen,
+    setStage
+  } = useWorkflow();
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isGenerateReqModalOpen, setIsGenerateReqModalOpen] = useState(false);
   
   const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false);
   const [knowledgeData, setKnowledgeData] = useState<{ filename: string; content: string } | null>(null);
@@ -102,7 +106,7 @@ export const BusinessInputStage: React.FC = () => {
               {/* Primary Action: Generate Requirements */}
               <button
                 type="button"
-                onClick={() => generateRequirements(false)}
+                onClick={() => setIsGenerateReqModalOpen(true)}
                 disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                 title="Accept Business Requirement and generate structured requirements"
@@ -204,9 +208,13 @@ export const BusinessInputStage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    setStage('requirements');
+                    if (workflow.requirements) {
+                      setStage('requirements');
+                    } else {
+                      setIsGenerateReqModalOpen(true);
+                    }
                   }}
-                  disabled={!workflow.requirements || isGeneratingModalOpen}
+                  disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                   className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
                 >
                   <span>Next</span>
@@ -314,6 +322,23 @@ export const BusinessInputStage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <GenerateWithInfoModal
+        isOpen={isGenerateReqModalOpen}
+        onClose={() => setIsGenerateReqModalOpen(false)}
+        onGenerate={(info) => {
+          if (info && Array.isArray(info)) {
+            info.forEach(entry => addAdditionalInformation(entry));
+          } else if (info) {
+            addAdditionalInformation(info as any);
+          }
+          generateRequirements(true);
+          setIsGenerateReqModalOpen(false);
+        }}
+        title="Do you want to add any additional information?"
+        generationLabel="Generate Requirements"
+      />
     </div>
   );
 };
+

@@ -685,7 +685,8 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
             message: 'Generating Domain Classes...'
           });
         },
-        additionalReqStrs
+        additionalReqStrs,
+        workflow.additionalInformation
       );
 
       setWorkflow((prev: SchemaGenerationWorkflow) => ({

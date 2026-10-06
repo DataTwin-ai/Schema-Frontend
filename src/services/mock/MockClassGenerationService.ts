@@ -7,7 +7,9 @@ export class MockClassGenerationService implements IClassGenerationService {
     requirements: RequirementsModel,
     runId?: string,
     onProgress?: ProgressCallback,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    additionalRequirements?: string[],
+    additionalInformation?: any[]
   ): Promise<SchemaClass[]> {
     const steps = [
       { id: '1', label: 'Analyzing requirement layers & grain definitions', detail: 'Evaluating requirements against master datasources PO_I, CA, AP' },

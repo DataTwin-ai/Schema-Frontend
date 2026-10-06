@@ -1022,8 +1022,10 @@ export const ClassesStage: React.FC = () => {
         isOpen={isGenerateModalOpen}
         onClose={() => setIsGenerateModalOpen(false)}
         onGenerate={(info) => {
-          if (info) {
-            addAdditionalInformation(info);
+          if (info && Array.isArray(info)) {
+            info.forEach(entry => addAdditionalInformation(entry));
+          } else if (info) {
+            addAdditionalInformation(info as any);
           }
           generateSchema();
         }}
