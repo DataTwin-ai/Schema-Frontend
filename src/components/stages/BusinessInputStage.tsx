@@ -206,7 +206,7 @@ export const BusinessInputStage: React.FC = () => {
                   onClick={() => {
                     setStage('requirements');
                   }}
-                  disabled={!workflow.requirements || isGeneratingModalOpen}
+                  disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                   className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
                 >
                   <span>Next</span>

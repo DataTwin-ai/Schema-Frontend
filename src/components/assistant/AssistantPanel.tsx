@@ -8,7 +8,9 @@ import {
   Loader2, 
   Trash2, 
   ChevronRight, 
-  ChevronLeft
+  ChevronLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { AssistantSuggestedAction } from '../../types';
 import ReactMarkdown from 'react-markdown';
@@ -47,7 +49,34 @@ export const AssistantPanel: React.FC = () => {
 
   const [inputMessage, setInputMessage] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(320);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const startDrag = (e: React.MouseEvent) => {
+    if (isMaximized || isCollapsed) return;
+    e.preventDefault();
+    setIsDragging(true);
+
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = startX - moveEvent.clientX;
+      const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 800);
+      setPanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,18 +93,18 @@ export const AssistantPanel: React.FC = () => {
     switch (workflow.stage) {
       case 'business-input':
         return [
-          'What are the mandatory fields in Accounts Payable extract?',
-          'How does DataTwin structure business requirements?',
+          'What are the mandatory fields in the Active_AB (Audited Books) extract?',
+          'What are the mandatory fields in Active_TaxSys (Portal)?',
         ];
       case 'requirements':
         return [
-          'What should I add to the finance requirement?',
-          'Explain zero-variance reconciliation rule',
+          'Explain the Triple-Match lookup rule for Master Data',
+          'How are the GSTR-9C reconciliation rows partitioned?',
         ];
       case 'classes':
         return [
-          'Explain inter-class dependency chain',
-          'What is the purpose of cost allocation classes?',
+          'What transaction types belong to the BOOKS vs PORTAL groups?',
+          'Explain the GSTR-9C row grouping rules (e.g. Table 5A vs 12A)',
         ];
       case 'schema':
         return [
@@ -118,8 +147,22 @@ export const AssistantPanel: React.FC = () => {
   return (
     <aside
       aria-label="DataTwin Schema Assistant"
-      className="w-72 lg:w-80 bg-neutral-50/50 dark:bg-neutral-900/60 border-l border-neutral-200 dark:border-neutral-800 flex flex-col justify-between select-none shrink-0 h-full overflow-hidden transition-colors duration-150 z-20"
+      style={{
+        width: isMaximized ? undefined : isCollapsed ? undefined : `${panelWidth}px`,
+      }}
+      className={`${
+        isMaximized 
+          ? 'w-full sm:w-[500px] lg:w-[700px] border-l-2 shadow-[inset_1px_0_0_0_rgba(0,0,0,0.05)]' 
+          : 'border-l'
+      } relative z-20 bg-neutral-50/50 dark:bg-neutral-900/60 border-neutral-200 dark:border-neutral-800 flex flex-col justify-between select-none shrink-0 h-full overflow-hidden ${isDragging ? 'transition-none' : 'transition-all duration-300'}`}
     >
+      {/* Resizer Handle */}
+      {!isCollapsed && !isMaximized && (
+        <div
+          className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize hover:bg-neutral-300 dark:hover:bg-neutral-700 active:bg-neutral-400 dark:active:bg-neutral-600 transition-colors z-30"
+          onMouseDown={startDrag}
+        />
+      )}
       {/* Assistant Header */}
       <div className="px-3.5 py-3 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-neutral-900 shrink-0">
         <div className="flex items-center space-x-2">
@@ -136,7 +179,17 @@ export const AssistantPanel: React.FC = () => {
             <Trash2 className="h-3.5 w-3.5" />
           </button>
           <button
-            onClick={() => setIsCollapsed(true)}
+            onClick={() => setIsMaximized(!isMaximized)}
+            className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors"
+            title={isMaximized ? "Restore" : "Maximize"}
+          >
+            {isMaximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            onClick={() => {
+              setIsCollapsed(true);
+              setIsMaximized(false);
+            }}
             className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors"
             title="Collapse"
           >

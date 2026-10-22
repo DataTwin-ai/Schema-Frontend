@@ -584,6 +584,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
+        setIsGeneratingModalOpen(false);
         setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
       }
@@ -644,6 +645,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
+        setIsGeneratingModalOpen(false);
         setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
       }
@@ -706,6 +708,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
+        setIsGeneratingModalOpen(false);
         setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
       }
@@ -772,6 +775,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
+        setIsGeneratingModalOpen(false);
         setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
       }
@@ -1152,6 +1156,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     try {
       const resp = await assistantService.respond(text, {
         stage: workflow.stage,
+        runId: workflow.runId,
         requirements: workflow.requirements,
         classes: workflow.classes,
         schema: workflow.schema,
@@ -1167,6 +1172,27 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
       };
 
       setAssistantMessages((prev) => [...prev, assistantMsg]);
+
+      if ((resp.success || resp.filesModified) && workflow.runId) {
+        try {
+          const res = await fetch(`${API_URL}/runs/${workflow.runId}/continue`, {
+            method: 'POST'
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.workflowState) {
+              setWorkflow(data.workflowState);
+              if (data.unsavedSchemaText !== undefined && data.unsavedSchemaText !== null) {
+                setEditedSchemaJson(data.unsavedSchemaText);
+              } else if (data.workflowState.schema) {
+                setEditedSchemaJson(JSON.stringify(data.workflowState.schema, null, 2));
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to refresh workflow state after assistant action', e);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {

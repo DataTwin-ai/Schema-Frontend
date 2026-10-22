@@ -1,10 +1,10 @@
 import { BusinessInput } from '../types';
 
 export const sampleBusinessInput: BusinessInput = {
-  highLevelRequirement: 'The system should calculate supplier advance payments, track the advance balance, apply eligible advances against supplier invoices, and determine the adjusted invoice payable amount and remaining advance balance.',
+  highLevelRequirement: 'The system should reconcile the audited financial books (Active_AB) against the GST portal returns (Active_TaxSys) for GSTR-9C reporting, utilizing the Triple-Match lookup rule for master data and partitioned by transaction type..',
   isBusinessRequirementGenerated: true,
-  generatedBusinessRequirement: `DOMAIN: Accounts Payable (AP)
-HLR: The system should calculate supplier advance payments, track the advance balance, apply eligible advances against supplier invoices, and determine the adjusted invoice payable amount and remaining advance balance.
+  generatedBusinessRequirement: `DOMAIN: GSTR-9C Reconciliation
+HLR: The system should reconcile the audited financial books (Active_AB) against the GST portal returns (Active_TaxSys) for GSTR-9C reporting, utilizing the Triple-Match lookup rule for master data and partitioned by transaction type..
 
 Key Operational Capabilities:
 1. Retrieval of contract milestones and purchase order parameters to compute eligible supplier advance payments.

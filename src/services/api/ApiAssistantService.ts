@@ -19,6 +19,8 @@ export class ApiAssistantService implements IAssistantService {
         body: JSON.stringify({
           session_id: this.sessionId,
           message: message,
+          run_id: context.runId,
+          stage: context.stage,
         }),
       });
 
@@ -29,6 +31,8 @@ export class ApiAssistantService implements IAssistantService {
       const data = await response.json();
       return {
         message: data.reply || data.error || 'No response from assistant.',
+        success: data.success,
+        filesModified: data.files_modified || data.filesModified,
       };
     } catch (error: any) {
       return {

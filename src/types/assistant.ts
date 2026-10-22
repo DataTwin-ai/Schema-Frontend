@@ -10,6 +10,7 @@ export interface AssistantContext {
   schema?: SchemaModel;
   activeEntityId?: string;
   activeEntityType?: 'problem-statement' | 'objective' | 'requirement' | 'class' | 'schema-node' | null;
+  runId?: string;
 }
 
 export interface AssistantSuggestedAction {
@@ -32,4 +33,6 @@ export interface AssistantResponse {
   message: string;
   suggestedActions?: AssistantSuggestedAction[];
   contextInsights?: string[];
+  success?: boolean;
+  filesModified?: boolean;
 }

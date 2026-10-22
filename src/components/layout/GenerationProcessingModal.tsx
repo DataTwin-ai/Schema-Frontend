@@ -16,8 +16,8 @@ export interface GenerationProcessingModalProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Safely extract a 0–100 integer percentage from the backend progress field.
- *  Backend sends `progress` as an object { current, total, percentage, … } or
+/** Safely extract a 0-100 integer percentage from the backend progress field.
+ *  Backend sends `progress` as an object { current, total, percentage, ... } or
  *  occasionally as a plain number. Never let the raw object reach JSX. */
 function extractPct(rawProgress: unknown): number {
   if (typeof rawProgress === 'number') {
@@ -70,7 +70,7 @@ function buildStepLabel(rawProgress: unknown): string | null {
 
   if (step !== undefined && totalSteps !== undefined) {
     let stepPart = `Step ${step} of ${totalSteps}`;
-    if (phaseLabel) stepPart += ` · ${phaseLabel}`;
+    if (phaseLabel) stepPart += ' \u00b7 ' + phaseLabel;
     parts.push(stepPart);
   } else if (phaseLabel) {
     parts.push(phaseLabel);
@@ -87,7 +87,7 @@ function buildStepLabel(rawProgress: unknown): string | null {
     }
   }
 
-  return parts.length > 0 ? parts.join(' · ') : null;
+  return parts.length > 0 ? parts.join(' \u00b7 ') : null;
 }
 
 /** Build ETA sub-line from progress object. */
@@ -120,7 +120,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
 
   const isOpen = propIsOpen !== undefined ? propIsOpen : isGeneratingModalOpen;
 
-  // Elapsed timer — ticks every second while modal is visible
+  // Elapsed timer - ticks every second while modal is visible
   const [elapsedSecs, setElapsedSecs] = useState(0);
   const elapsedRef  = useRef(0);
   const timerRef    = useRef<NodeJS.Timeout | null>(null);
@@ -147,7 +147,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
     };
   }, [isOpen]);
 
-  // Polling for backend operation status — every 1 s for smooth bar movement
+  // Polling for backend operation status - every 1 s for smooth bar movement
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
@@ -214,7 +214,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   // STOP hint appears after 2 min of waiting
   const showStopHint = isStopRequested && elapsedSecs >= 120;
 
-  // Operation title — never pass objects; use strings only
+  // Operation title - never pass objects; use strings only
   const resolveOperationLabel = (): string => {
     if (propOperationLabel) return propOperationLabel;
     if (generationOperationLabel && generationOperationLabel !== 'Generating\u2026') {
@@ -416,7 +416,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
           </p>
         )}
 
-        {/* Progress bar + step info — visible while running or completing */}
+        {/* Progress bar + step info - visible while running or completing */}
         {showProgressBar && !activeOperation?.error && (
           <div className="mt-4 text-left">
             {/* Bar row */}
@@ -443,10 +443,10 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
               </p>
             )}
 
-            {/* Elapsed · ETA */}
+            {/* Elapsed - ETA */}
             <p className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-500 leading-snug">
               Elapsed {formatDuration(elapsedSecs)}
-              {etaLine ? ` · ${etaLine}` : ''}
+              {etaLine ? ' \u00b7 ' + etaLine : ''}
             </p>
 
             {/* Stop-requested status */}
@@ -460,7 +460,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
           </div>
         )}
 
-        {/* Supporting text fallback — only when bar is not shown */}
+        {/* Supporting text fallback - only when bar is not shown */}
         {!showProgressBar && !activeOperation?.error && supportingText && (
           <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 leading-relaxed">
             {supportingText}

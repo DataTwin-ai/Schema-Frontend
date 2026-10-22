@@ -32,7 +32,7 @@ export async function pollOperation(
       });
     }
 
-    if (statusData.status === 'COMPLETED') {
+    if (statusData.status === 'COMPLETED' || statusData.status === 'PASS' || statusData.status === 'FAIL') {
       return statusData;
     }
     

@@ -45,15 +45,18 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
   const [expectedError, setExpectedError] = useState<string | null>(null);
 
   const [schemaKey, setSchemaKey] = useState('');
-  const [uploadSchema, setUploadSchema] = useState(true);
-  
-  const [keyCheckStatus, setKeyCheckStatus] = useState<'checking' | 'exists' | 'clear' | null>(null);
+  const [keyCheckStatus, setKeyCheckStatus] = useState<'checking' | 'exists' | 'not_found' | null>(null);
   const [keyExistsData, setKeyExistsData] = useState<{modified?: string, size?: string} | null>(null);
-  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  const [errorPopup, setErrorPopup] = useState<{
+    isOpen: boolean;
+    errors: Array<{ section: string; message: string; details?: string[] }>;
+    canProceedAnyway?: boolean;
+  } | null>(null);
 
   // Initialize from initialInputs if any
   useEffect(() => {
     if (isOpen) {
+      setErrorPopup(null);
       if (initialInputs) {
          if (initialInputs.eventJson) {
             setEventJsonContent(initialInputs.eventJson);
@@ -74,15 +77,12 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
          if (initialInputs.schemaKey) {
             setSchemaKey(initialInputs.schemaKey);
          }
-         if (initialInputs.uploadSchema !== undefined) {
-            setUploadSchema(initialInputs.uploadSchema);
-         }
       } else {
          // Reset state
          setEventInputType('upload'); setEventFile(null); setEventText(''); setEventJsonContent(null); setEventError(null);
          setTenantId(null); setProcessId(null); setDataSources({}); setCoverage([]);
          setExpectedInputType('upload'); setExpectedFile(null); setExpectedText(''); setExpectedJsonContent(null); setExpectedError(null);
-         setSchemaKey(''); setUploadSchema(true); setKeyCheckStatus(null); setKeyExistsData(null); setConfirmOverwrite(false);
+         setSchemaKey(''); setKeyCheckStatus(null); setKeyExistsData(null);
       }
     }
   }, [isOpen, initialInputs]);
@@ -128,14 +128,23 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
       setDataSources(dsCounts);
       
       const schemaClasses = workflow.schema?.classes || [];
+      const classNamesSet = new Set<string>();
       const cov = schemaClasses.map((cls: any) => {
-         let dsName = cls.DataSource || cls.className || 'Unknown';
-         if (!cls.DataSource && cls.children) {
-           const dsNode = cls.children.find((c:any) => c.title === 'DataSource');
+         let dsName = cls.DataSource;
+         if (!dsName && cls.schema?.children) {
+           const dsNode = cls.schema.children.find((c: any) => c.title === 'DataSource' || c.technicalName?.toLowerCase() === 'datasource');
            if (dsNode) dsName = dsNode.val;
          }
-         const isPresent = Object.keys(dsCounts).includes(dsName);
-         return { name: dsName, present: isPresent };
+         if (!dsName && cls.children) {
+           const dsNode = cls.children.find((c: any) => c.title === 'DataSource' || c.technicalName?.toLowerCase() === 'datasource');
+           if (dsNode) dsName = dsNode.val;
+         }
+         if (!dsName) dsName = cls.className || 'Unknown';
+         const isPresent = dsName === '#consolidate#' || Object.keys(dsCounts).includes(dsName) || classNamesSet.has(dsName);
+         if (cls.className) {
+           classNamesSet.add(cls.className);
+         }
+         return { name: cls.className || dsName, dsName, present: isPresent };
       });
       setCoverage(cov);
       setEventError(null);
@@ -239,9 +248,9 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
     e.target.value = '';
   };
 
-  // Check Schema Key existence on blur
+  // Check Schema Key existence on blur or change
   const checkSchemaKey = async () => {
-    if (!schemaKey || !uploadSchema) {
+    if (!schemaKey) {
        setKeyCheckStatus(null);
        return;
     }
@@ -254,15 +263,14 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
     
     setKeyCheckStatus('checking');
     try {
-       const res = await fetch(`${API_URL}/s3/schema-key-check?key=${encodeURIComponent(schemaKey)}&tenantId=${tenantId || ''}`);
+       const res = await fetch(`${API_URL}/s3/schema-key-check?key=${encodeURIComponent(schemaKey)}&schemaKey=${encodeURIComponent(schemaKey)}&tenantId=${tenantId || ''}`);
        if (res.ok) {
           const data = await res.json();
           if (data.exists) {
              setKeyCheckStatus('exists');
-             setKeyExistsData({ modified: data.modified, size: data.size });
-             setConfirmOverwrite(false); // reset
+             setKeyExistsData({ modified: data.lastModified || data.modified, size: data.size });
           } else {
-             setKeyCheckStatus('clear');
+             setKeyCheckStatus('not_found');
           }
        } else {
           setKeyCheckStatus(null);
@@ -273,27 +281,90 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
   };
 
   useEffect(() => {
-     if (uploadSchema && schemaKey) {
+     if (schemaKey && tenantId) {
         checkSchemaKey();
      } else {
         setKeyCheckStatus(null);
      }
-  }, [uploadSchema]);
+  }, [schemaKey, tenantId]);
 
   if (!isOpen) return null;
 
-  const hasCoverageError = coverage.some(c => !c.present);
   const isValidSchemaKey = schemaKey.endsWith('.json') || schemaKey.startsWith('s3://');
-  
-  const canRun = 
-    eventJsonContent && 
-    !eventError && 
-    !hasCoverageError &&
-    expectedJsonContent && 
-    !expectedError &&
-    schemaKey && 
-    isValidSchemaKey &&
-    (keyCheckStatus === 'exists' && uploadSchema ? confirmOverwrite : true);
+
+  const executeRun = () => {
+    setErrorPopup(null);
+    onRun({
+      eventJson: eventJsonContent,
+      expectedOutput: expectedJsonContent,
+      schemaKey,
+      uploadSchema: false,
+      confirmOverwrite: false,
+      eventFileName: eventFile?.name,
+      expectedFileName: expectedFile?.name
+    });
+  };
+
+  const handleRunClick = () => {
+    const validationErrors: Array<{ section: string; message: string; details?: string[] }> = [];
+
+    // 1. Check Event JSON
+    if (!eventJsonContent) {
+      validationErrors.push({
+        section: '1. Event JSON',
+        message: 'Event JSON is required. Please upload or paste a valid Event JSON.'
+      });
+    } else if (eventError) {
+      validationErrors.push({
+        section: '1. Event JSON',
+        message: eventError
+      });
+    }
+
+    // 2. Check Expected Output
+    if (!expectedJsonContent) {
+      validationErrors.push({
+        section: '2. Expected Output',
+        message: 'Expected Output is required. Please upload or paste Expected Output data.'
+      });
+    } else if (expectedError) {
+      validationErrors.push({
+        section: '2. Expected Output',
+        message: expectedError
+      });
+    }
+
+    // 3. Check Schema Key
+    if (!schemaKey.trim()) {
+      validationErrors.push({
+        section: '3. S3 Schema Key',
+        message: 'S3 Schema Key is required (e.g. MySchemaDef/schema.json or s3://dt-bucket/schema.json).'
+      });
+    } else if (!isValidSchemaKey) {
+      validationErrors.push({
+        section: '3. S3 Schema Key',
+        message: 'Invalid key format: Schema key must end with .json or start with s3://'
+      });
+    } else if (keyCheckStatus === 'not_found') {
+      validationErrors.push({
+        section: '3. S3 Schema Key',
+        message: 'Schema does not exist at this key in S3. Please provide an existing S3 schema key.'
+      });
+    }
+
+    // If there are errors:
+    if (validationErrors.length > 0) {
+      setErrorPopup({
+        isOpen: true,
+        errors: validationErrors,
+        canProceedAnyway: false
+      });
+      return;
+    }
+
+    // No errors, execute!
+    executeRun();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -305,7 +376,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
               <Database className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-neutral-900 dark:text-white">Final Output \u2014 Inputs</h2>
+              <h2 className="text-sm font-bold text-neutral-900 dark:text-white">Final Output {'\u2014'} Inputs</h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">Provide the execution context and event data to test the schema</p>
             </div>
           </div>
@@ -373,7 +444,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
                       <div className="flex flex-wrap gap-1.5 pt-1 border-t border-neutral-200 dark:border-neutral-800">
                          {Object.entries(dataSources).map(([k,v]) => (
                             <span key={k} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
-                              {k} \u00B7 {v}
+                              {k} {'\u00b7'} {v}
                             </span>
                          ))}
                       </div>
@@ -453,16 +524,22 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
              )}
           </div>
 
-          {/* 3. Schema Key */}
+          {/* 3. S3 Schema Key */}
           <div className="space-y-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-             <label className="text-xs font-bold text-neutral-800 dark:text-neutral-200">3. Schema Destination Key</label>
+             <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-800 dark:text-neutral-200">3. S3 Schema Key</label>
+                <span className="text-[10px] text-neutral-500 font-medium">Loads directly from S3</span>
+             </div>
+             <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                Specify the existing S3 key of the schema to execute. The schema will be loaded directly from S3 without regeneration or modification.
+             </p>
              <div className="relative">
                 <input
                    type="text"
                    value={schemaKey}
                    onChange={(e) => setSchemaKey(e.target.value)}
                    onBlur={checkSchemaKey}
-                   placeholder="e.g. Schema/budget.json or s3://dt-bucket/budget.json"
+                   placeholder="e.g. MySchemaDef/schema.json or s3://dt-bucket/schema.json"
                    className={`w-full bg-neutral-50 dark:bg-neutral-950 border ${!isValidSchemaKey && schemaKey ? 'border-rose-300 focus:border-rose-500' : 'border-neutral-300 dark:border-neutral-700 focus:border-neutral-500'} rounded-lg px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-200 focus:outline-none transition-colors`}
                 />
                 {!isValidSchemaKey && schemaKey && (
@@ -476,42 +553,33 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
                 </div>
              )}
 
-             <div className="flex items-start space-x-2 pt-1">
-                <input
-                   type="checkbox"
-                   id="uploadSchema"
-                   checked={uploadSchema}
-                   onChange={(e) => setUploadSchema(e.target.checked)}
-                   className="mt-0.5 rounded border-neutral-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="uploadSchema" className="text-xs text-neutral-700 dark:text-neutral-300 cursor-pointer select-none">
-                   Upload the Schema Studio schema to this key before execution
-                </label>
-             </div>
+             {keyCheckStatus === 'checking' && (
+                <div className="flex items-center space-x-2 text-[11px] text-neutral-500">
+                   <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                   <span>Verifying schema key in S3...</span>
+                </div>
+             )}
 
-             {keyCheckStatus === 'exists' && uploadSchema && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-3 space-y-2 mt-2">
-                   <div className="flex items-start space-x-2 text-[11px] text-amber-800 dark:text-amber-300">
-                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                      <div>
-                         <p className="font-semibold">A schema already exists at this key.</p>
-                         <p className="opacity-90">
-                            It will be overwritten. A backup of the previous version will be kept.
-                            {keyExistsData?.modified && ` (Last modified: ${keyExistsData.modified})`}
-                         </p>
-                      </div>
+             {keyCheckStatus === 'exists' && (
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-lg p-2.5 flex items-start space-x-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+                   <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+                   <div>
+                      <p className="font-semibold">Schema found in S3</p>
+                      <p className="text-[10px] opacity-90">
+                         {keyExistsData?.size ? `Size: ${(Number(keyExistsData.size) / 1024).toFixed(1)} KB` : ''}
+                         {keyExistsData?.modified ? ` | Last Modified: ${new Date(keyExistsData.modified).toLocaleString()}` : ''}
+                         {' \u2014 will be loaded directly'}
+                      </p>
                    </div>
-                   <div className="flex items-center space-x-2 pl-6">
-                      <input
-                         type="checkbox"
-                         id="confirmOverwrite"
-                         checked={confirmOverwrite}
-                         onChange={(e) => setConfirmOverwrite(e.target.checked)}
-                         className="rounded border-amber-400 text-amber-600 focus:ring-amber-500 bg-amber-50"
-                      />
-                      <label htmlFor="confirmOverwrite" className="text-[11px] font-bold text-amber-900 dark:text-amber-400 cursor-pointer select-none">
-                         I understand, overwrite it
-                      </label>
+                </div>
+             )}
+
+             {keyCheckStatus === 'not_found' && (
+                <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-lg p-2.5 flex items-start space-x-2 text-[11px] text-rose-800 dark:text-rose-300">
+                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+                   <div>
+                      <p className="font-semibold">Schema not found in S3</p>
+                      <p className="text-[10px] opacity-90">No object exists at this key in the bucket. Please provide an existing schema key.</p>
                    </div>
                 </div>
              )}
@@ -530,29 +598,113 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
           
           <button
             type="button"
-            disabled={!canRun}
-            onClick={() => {
-               onRun({
-                  eventJson: eventJsonContent,
-                  expectedOutput: expectedJsonContent,
-                  schemaKey,
-                  uploadSchema,
-                  eventFileName: eventFile?.name,
-                  expectedFileName: expectedFile?.name,
-                  confirmOverwrite: keyCheckStatus === 'exists' ? confirmOverwrite : false
-               });
-            }}
-            className={`flex items-center space-x-1.5 px-6 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
-               canRun 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20 hover:shadow-blue-500/40 cursor-pointer'
-                  : 'bg-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500 cursor-not-allowed'
-            }`}
+            onClick={handleRunClick}
+            className="flex items-center space-x-1.5 px-6 py-2 rounded-lg text-xs font-bold transition-all shadow-sm bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-blue-500/20 hover:shadow-blue-500/40 cursor-pointer"
           >
             <span>Run Final Output</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
+
+      {/* Error Popup Modal */}
+      {errorPopup?.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 flex items-start justify-between bg-rose-50/60 dark:bg-rose-950/30">
+              <div className="flex items-center space-x-3">
+                <div className="h-10 w-10 rounded-full bg-rose-100 dark:bg-rose-900/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    {errorPopup.canProceedAnyway ? 'Schema Coverage Warning' : 'Validation Error \u2014 Cannot Run'}
+                  </h3>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    {errorPopup.canProceedAnyway
+                      ? 'Some data sources required by the schema are missing in the Event JSON.'
+                      : 'Please address the following requirement(s) to run the final output:'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorPopup(null)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Error List */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1 text-xs">
+              {errorPopup.errors.map((err, idx) => (
+                <div
+                  key={idx}
+                  className="p-3.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/40 dark:bg-rose-950/20 space-y-2"
+                >
+                  <div className="flex items-start space-x-2">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-200/80 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300 shrink-0 uppercase tracking-wide">
+                      {err.section}
+                    </span>
+                    <p className="font-semibold text-rose-900 dark:text-rose-200 leading-tight">
+                      {err.message}
+                    </p>
+                  </div>
+
+                  {err.details && err.details.length > 0 && (
+                    <div className="mt-2 pl-2 border-l-2 border-rose-300 dark:border-rose-800 space-y-1.5">
+                      <p className="text-[11px] font-medium text-neutral-600 dark:text-neutral-400">
+                        Missing data sources ({err.details.length}):
+                      </p>
+                      <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-1">
+                        {err.details.map((item, dIdx) => (
+                          <span
+                            key={dIdx}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white dark:bg-neutral-800 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-[10px] font-mono font-medium"
+                          >
+                            <X className="h-2.5 w-2.5 text-rose-500" />
+                            <span>{item}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {errorPopup.canProceedAnyway && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                  <span className="font-bold">Notice:</span> You can still run the schema output. If the schema evaluation logic references these missing data sources, execution may produce nulls or encounter errors.
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-end space-x-2 bg-neutral-50/50 dark:bg-neutral-900">
+              <button
+                type="button"
+                onClick={() => setErrorPopup(null)}
+                className="px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+              >
+                {errorPopup.canProceedAnyway ? 'Back to Edit' : 'Close & Fix'}
+              </button>
+
+              {errorPopup.canProceedAnyway && (
+                <button
+                  type="button"
+                  onClick={() => executeRun()}
+                  className="flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm shadow-amber-500/20 cursor-pointer transition-colors"
+                >
+                  <span>Proceed Anyway</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
