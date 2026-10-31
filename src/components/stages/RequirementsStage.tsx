@@ -29,6 +29,7 @@ import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { AddNewBusinessRequirementModal } from '../common/AddNewBusinessRequirementModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 import { API_URL } from '../../services/api/config';
+import { useStageData } from '../../hooks/useStageData';
 
 interface RequirementItem {
   id: string;
@@ -431,7 +432,11 @@ export const RequirementsStage: React.FC = () => {
   // Generate with info modal
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(!req);
+  const { data: stageData } = useStageData<any>('requirements');
+  const [hasUserEdited, setHasUserEdited] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(!req && !stageData);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -439,6 +444,13 @@ export const RequirementsStage: React.FC = () => {
     const fetchReqs = async () => {
       if (workflow.requirements) {
         if (isMounted) setIsLoading(false);
+        return;
+      }
+      if (stageData) {
+        if (isMounted) {
+          setWorkflow((prev: any) => ({ ...prev, requirements: stageData }));
+          setIsLoading(false);
+        }
         return;
       }
       if (!workflow.runId) {
@@ -459,7 +471,11 @@ export const RequirementsStage: React.FC = () => {
         if (!res.ok) throw new Error(`Failed to load requirements (status ${res.status})`);
         const data = await res.json();
         if (isMounted) {
-          setWorkflow((prev: any) => ({ ...prev, requirements: data.result || data }));
+          setWorkflow((prev: any) => ({
+            ...prev,
+            requirements: data.result || data,
+            outputs: { ...prev.outputs, requirements: data.result || data }
+          }));
         }
       } catch (err: any) {
         if (isMounted) setError(err.message);
@@ -469,7 +485,43 @@ export const RequirementsStage: React.FC = () => {
     };
     fetchReqs();
     return () => { isMounted = false; };
-  }, [workflow.requirements, workflow.runId, setWorkflow]);
+  }, [workflow.requirements, stageData, workflow.runId, setWorkflow]);
+
+  const handleContinueToClasses = async (additionalInfo?: any) => {
+    if (!workflow.runId) {
+      setStage('classes');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (additionalInfo && Array.isArray(additionalInfo)) {
+        additionalInfo.forEach(entry => addAdditionalInformation(entry));
+      } else if (additionalInfo) {
+        addAdditionalInformation(additionalInfo as any);
+      }
+
+      const body: any = {};
+      if (hasUserEdited && (workflow.requirements as any)?.currentRequirementsText) {
+        body.editedRequirements = (workflow.requirements as any).currentRequirementsText;
+      }
+
+      const res = await fetch(`${API_URL}/runs/${workflow.runId}/scdp-input`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        console.warn(`scdp-input returned status ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to sync scdp-input:', err);
+    } finally {
+      setIsSubmitting(false);
+      setIsGenerateModalOpen(false);
+      setStage('classes');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -514,12 +566,18 @@ export const RequirementsStage: React.FC = () => {
   }
 
 
+  const problemStatements = req?.problemStatements || (req as any)?.problem_statements || [];
+  const businessObjectives = req?.businessObjectives || (req as any)?.business_objectives || [];
+  const businessRequirements = req?.businessRequirements || (req as any)?.business_requirements || [];
+  const financeRequirements = req?.financeRequirements || (req as any)?.finance_requirements || [];
+  const technicalRequirements = req?.technicalRequirements || (req as any)?.technical_requirements || [];
+
   const totalReqCount = 
-    req.problemStatements.length + 
-    req.businessObjectives.length + 
-    req.businessRequirements.length + 
-    req.financeRequirements.length + 
-    req.technicalRequirements.length;
+    problemStatements.length + 
+    businessObjectives.length + 
+    businessRequirements.length + 
+    financeRequirements.length + 
+    technicalRequirements.length;
 
   return (
     <div className="flex flex-col min-h-full">
@@ -541,10 +599,20 @@ export const RequirementsStage: React.FC = () => {
             <SaveDraftButton />
             <button
               onClick={() => setIsGenerateModalOpen(true)}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
+              disabled={isSubmitting}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer disabled:opacity-50"
             >
-              <span>Generate Classes</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Preparing Classes...</span>
+                </>
+              ) : (
+                <>
+                  <span>Next: Domain Classes</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </>
+              )}
             </button>
           </>
         }
@@ -575,7 +643,7 @@ export const RequirementsStage: React.FC = () => {
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
               }`}
             >
-              Problem Statements ({req.problemStatements.length})
+              Problem Statements ({problemStatements.length})
             </button>
             <button
               type="button"
@@ -586,7 +654,7 @@ export const RequirementsStage: React.FC = () => {
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
               }`}
             >
-              Objectives ({req.businessObjectives.length})
+              Objectives ({businessObjectives.length})
             </button>
             <button
               type="button"
@@ -597,7 +665,7 @@ export const RequirementsStage: React.FC = () => {
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
               }`}
             >
-              Business ({req.businessRequirements.length})
+              Business ({businessRequirements.length})
             </button>
             <button
               type="button"
@@ -608,7 +676,7 @@ export const RequirementsStage: React.FC = () => {
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
               }`}
             >
-              Finance ({req.financeRequirements.length})
+              Finance ({financeRequirements.length})
             </button>
             <button
               type="button"
@@ -619,7 +687,7 @@ export const RequirementsStage: React.FC = () => {
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
               }`}
             >
-              Technical ({req.technicalRequirements.length})
+              Technical ({technicalRequirements.length})
             </button>
           </div>
         </div>
@@ -676,13 +744,13 @@ export const RequirementsStage: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-300 flex items-center space-x-1.5">
                   <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>Problem Statements ({req.problemStatements.length})</span>
+                  <span>Problem Statements ({problemStatements.length})</span>
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Core operational pain points</span>
               </div>
 
               <div className="space-y-3">
-                {req.problemStatements.map((ps) => {
+                {problemStatements.map((ps) => {
                   const versions = getRequirementVersions(ps.id).length > 0 
                     ? getRequirementVersions(ps.id) 
                     : getRequirementVersions(ps.code);
@@ -722,13 +790,13 @@ export const RequirementsStage: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-300 flex items-center space-x-1.5">
                   <FileCheck className="h-3.5 w-3.5" />
-                  <span>Business Objectives ({req.businessObjectives.length})</span>
+                  <span>Business Objectives ({businessObjectives.length})</span>
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Measurable operational goals</span>
               </div>
 
               <div className="space-y-3">
-                {req.businessObjectives.map((bo) => {
+                {businessObjectives.map((bo) => {
                   const versions = getRequirementVersions(bo.id).length > 0 
                     ? getRequirementVersions(bo.id) 
                     : getRequirementVersions(bo.code);
@@ -768,13 +836,13 @@ export const RequirementsStage: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-300 flex items-center space-x-1.5">
                   <FileCheck className="h-3.5 w-3.5" />
-                  <span>Business Requirements ({req.businessRequirements.length})</span>
+                  <span>Business Requirements ({businessRequirements.length})</span>
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Functional processing rules</span>
               </div>
 
               <div className="space-y-3">
-                {req.businessRequirements.map((br) => {
+                {businessRequirements.map((br) => {
                   const versions = getRequirementVersions(br.id).length > 0 
                     ? getRequirementVersions(br.id) 
                     : getRequirementVersions(br.code);
@@ -815,13 +883,13 @@ export const RequirementsStage: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-300 flex items-center space-x-1.5">
                   <Calculator className="h-3.5 w-3.5" />
-                  <span>Finance Requirements ({req.financeRequirements.length})</span>
+                  <span>Finance Requirements ({financeRequirements.length})</span>
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Accounting, GL & allocation formulas</span>
               </div>
 
               <div className="space-y-3">
-                {req.financeRequirements.map((fr) => {
+                {financeRequirements.map((fr) => {
                   const versions = getRequirementVersions(fr.id).length > 0 
                     ? getRequirementVersions(fr.id) 
                     : getRequirementVersions(fr.code);
@@ -861,13 +929,13 @@ export const RequirementsStage: React.FC = () => {
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-300 flex items-center space-x-1.5">
                   <WorkflowIcon className="h-3.5 w-3.5" />
-                  <span>Technical Requirements ({req.technicalRequirements.length})</span>
+                  <span>Technical Requirements ({technicalRequirements.length})</span>
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400">SCDP classes, schemas, grain & pipelines</span>
               </div>
 
               <div className="space-y-3">
-                {req.technicalRequirements.map((tr) => {
+                {technicalRequirements.map((tr) => {
                   const versions = getRequirementVersions(tr.id).length > 0 
                     ? getRequirementVersions(tr.id) 
                     : getRequirementVersions(tr.code);
@@ -908,12 +976,7 @@ export const RequirementsStage: React.FC = () => {
         isOpen={isGenerateModalOpen}
         onClose={() => setIsGenerateModalOpen(false)}
         onGenerate={(info) => {
-          if (info && Array.isArray(info)) {
-            info.forEach(entry => addAdditionalInformation(entry));
-          } else if (info) {
-            addAdditionalInformation(info as any);
-          }
-          generateClasses();
+          handleContinueToClasses(info);
         }}
         title="Do you want to add any additional information?"
         generationLabel="Proceed to Classes"
