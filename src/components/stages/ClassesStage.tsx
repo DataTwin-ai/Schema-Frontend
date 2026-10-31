@@ -628,6 +628,7 @@ export const ClassesStage: React.FC = () => {
   const [newClassPurpose, setNewClassPurpose] = useState('');
   const [newClassDatasource, setNewClassDatasource] = useState('PrePaidReport');
   const [newClassGrain, setNewClassGrain] = useState('Per itemid Monthly');
+  const [classPlanExpanded, setClassPlanExpanded] = useState(false);
 
   if (classes.length === 0) {
     return (
@@ -725,9 +726,6 @@ export const ClassesStage: React.FC = () => {
     setNewClassName('');
     setNewClassPurpose('');
   };
-
-
-  const [classPlanExpanded, setClassPlanExpanded] = useState(false);
 
   const handleReplan = async () => {
     if (!confirm("Build a new class plan? The class list may change.")) return;
