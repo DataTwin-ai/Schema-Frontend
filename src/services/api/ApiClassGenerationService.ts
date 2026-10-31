@@ -18,40 +18,18 @@ export class ApiClassGenerationService implements IClassGenerationService {
       onProgress({ id: 'class-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate classes request' });
     }
 
-    const hasFiles = additionalInformation?.some(info => info.files?.some((f: any) => f.rawFile));
-    
-    let fetchOptions: RequestInit;
-    
-    if (hasFiles || additionalInformation?.length) {
-      const formData = new FormData();
-      formData.append('requirements', JSON.stringify(requirements));
-      if (runId) formData.append('runId', runId);
-      if (additionalRequirements) formData.append('additionalRequirements', JSON.stringify(additionalRequirements));
-      
-      const infoMeta = additionalInformation!.map(info => ({
-        category: info.category,
-        content: info.content,
-        fileNames: info.files?.map((f: any) => f.name) || []
-      }));
-      formData.append('additionalInfo', JSON.stringify(infoMeta));
-
-      additionalInformation!.forEach(info => {
-        if (info.files) {
-          info.files.forEach((f: any) => {
-            if (f.rawFile) formData.append('files', f.rawFile, f.name);
-          });
-        }
-      });
-      fetchOptions = { method: 'POST', body: formData };
-    } else {
-      fetchOptions = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirements, runId, additionalRequirements }),
-      };
+    const payload: Record<string, any> = {};
+    if (runId) payload.runId = runId;
+    if (requirements) payload.requirements = requirements;
+    if (additionalRequirements && additionalRequirements.length > 0) {
+      payload.additionalRequirements = additionalRequirements;
     }
 
-    const response = await fetch(`${API_URL}/generate/classes`, fetchOptions);
+    const response = await fetch(`${API_URL}/generate/classes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
     if (!response.ok) {
       if (response.status === 409) {
@@ -62,16 +40,30 @@ export class ApiClassGenerationService implements IClassGenerationService {
 
     const initData = await response.json();
 
-    // New async flow: backend returns { operationId, status: 'RUNNING' }
+    // Async flow: backend returns { operationId, status: 'RUNNING' }
     if (initData.operationId) {
       const operationId: string = initData.operationId;
       if (onOperationStarted) onOperationStarted(operationId);
 
       const statusData = await pollOperation(operationId, onProgress);
-      
-      const rawClasses = Array.isArray(statusData.classes)
-        ? statusData.classes
-        : (statusData.result?.classes || statusData.result || []);
+
+      // On completion, load GET /api/class-prompts into the existing cards
+      let rawClasses: any[] = [];
+      try {
+        const promptsRes = await fetch(`${API_URL}/class-prompts?run_id=${runId || ''}`);
+        if (promptsRes.ok) {
+          const promptsData = await promptsRes.json();
+          rawClasses = promptsData.classes || [];
+        }
+      } catch (e) {
+        console.warn('Failed to load class prompts:', e);
+      }
+
+      if (rawClasses.length === 0) {
+        rawClasses = Array.isArray(statusData.classes)
+          ? statusData.classes
+          : (statusData.result?.classes || statusData.result || []);
+      }
 
       if (onProgress) {
         onProgress({ id: 'class-done', status: 'done', label: 'Classes generated successfully' });
@@ -80,15 +72,27 @@ export class ApiClassGenerationService implements IClassGenerationService {
       return this.mapClasses(rawClasses);
     }
 
-    // Legacy synchronous flow fallback (if backend still returns direct result)
-    const rawClasses = Array.isArray(initData) ? initData : (initData.classes || initData.result || []);
+    // Fallback: direct response or fetch class-prompts
+    let rawClasses = Array.isArray(initData) ? initData : (initData.classes || initData.result || []);
+    if (rawClasses.length === 0) {
+      try {
+        const promptsRes = await fetch(`${API_URL}/class-prompts?run_id=${runId || ''}`);
+        if (promptsRes.ok) {
+          const promptsData = await promptsRes.json();
+          rawClasses = promptsData.classes || [];
+        }
+      } catch (e) {
+        console.warn('Failed to load class prompts:', e);
+      }
+    }
+
     if (onProgress) {
       onProgress({ id: 'class-done', status: 'done', label: 'Classes generated successfully' });
     }
     return this.mapClasses(rawClasses);
   }
 
-  private mapClasses(rawClasses: any[]): SchemaClass[] {
+  public mapClasses(rawClasses: any[]): SchemaClass[] {
     return rawClasses.map((rawClass: any) => ({
       id: rawClass.id || `class-${rawClass.class_no || rawClass.classNumber || Math.random()}`,
       classNumber: rawClass.class_no || rawClass.classNumber || 0,

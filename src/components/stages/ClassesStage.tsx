@@ -29,6 +29,7 @@ import { API_URL } from '../../services/api/config';
 import { RequirementCategoryChip } from '../common/RequirementCategoryChip';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
 import { formatClassSpecification } from '../../utils/classUtils';
+import { useStageData } from '../../hooks/useStageData';
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { ClassViewModal } from '../classes/ClassViewModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
@@ -580,6 +581,24 @@ export const ClassesStage: React.FC = () => {
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isInputsModalOpen, setIsInputsModalOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const { data: stageData } = useStageData<any>('classes');
+
+  // Hydrate from stageData if available
+  useEffect(() => {
+    if ((!classes || classes.length === 0) && stageData) {
+      if (Array.isArray(stageData)) {
+        updateWorkflowField('classes', stageData);
+      } else if (stageData.classes && Array.isArray(stageData.classes)) {
+        import('../../services').then(({ classService }) => {
+          // @ts-ignore
+          const mapped = (classService as any).mapClasses ? (classService as any).mapClasses(stageData.classes) : stageData.classes;
+          updateWorkflowField('classes', mapped);
+        });
+      }
+    }
+  }, [stageData, classes, updateWorkflowField]);
+
   // Load classes if empty but runId exists
   useEffect(() => {
     const fetchClasses = async () => {
@@ -589,8 +608,6 @@ export const ClassesStage: React.FC = () => {
           if (res.ok) {
             const data = await res.json();
             if (data && data.classes && data.classes.length > 0) {
-               // need to map them through ApiClassGenerationService if not already mapped
-               // Actually we can just dispatch updateWorkflowField('classes', mappedClasses)
                import('../../services').then(({ classService }) => {
                  // @ts-ignore
                  const mapped = (classService as any).mapClasses ? (classService as any).mapClasses(data.classes) : data.classes;
@@ -629,13 +646,21 @@ export const ClassesStage: React.FC = () => {
           }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No domain classes generated yet. Please return to Requirements stage.</p>
-          <button
-            onClick={() => setStage('requirements')}
-            className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold"
-          >
-            Go to Requirements
-          </button>
+          <p className="text-xs">No domain classes generated yet.</p>
+          <div className="flex items-center justify-center space-x-3 mt-4">
+            <button
+              onClick={() => setStage('requirements')}
+              className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+            >
+              Go to Requirements
+            </button>
+            <button
+              onClick={() => generateClasses && generateClasses()}
+              className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer"
+            >
+              Generate Classes
+            </button>
+          </div>
         </div>
       </div>
     );
