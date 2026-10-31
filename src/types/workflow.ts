@@ -127,4 +127,7 @@ export interface SchemaGenerationWorkflow {
   startStage?: string;
   lockedPlanText?: string;
   classPlanText?: string;
+  classPlanStatus?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  classPlanVersion?: number;
+  classPlanSource?: 'generated' | 'edited' | 'seeded';
 }

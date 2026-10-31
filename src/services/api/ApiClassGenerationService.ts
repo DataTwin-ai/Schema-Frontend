@@ -47,6 +47,15 @@ export class ApiClassGenerationService implements IClassGenerationService {
 
       const statusData = await pollOperation(operationId, onProgress);
 
+      if (statusData.status === 'AWAITING_APPROVAL') {
+        const plan = statusData.plan || statusData.result?.plan;
+        return {
+          awaitingApproval: true,
+          operationId,
+          plan,
+        } as any;
+      }
+
       // On completion, load GET /api/class-prompts into the existing cards
       let rawClasses: any[] = [];
       try {

@@ -18,9 +18,17 @@ export interface StaleEvent {
   reason: string;
 }
 
+export interface ClassPlanEvent {
+  runId: string;
+  status: string;
+  version: number;
+  source: string;
+}
+
 export type FileChangedListener = (event: FileChangedEvent) => void;
 export type OperationListener = (event: OperationEvent) => void;
 export type StaleListener = (event: StaleEvent) => void;
+export type ClassPlanListener = (event: ClassPlanEvent) => void;
 
 export class ApiFileSyncService {
   private eventSource: EventSource | null = null;
@@ -36,6 +44,7 @@ export class ApiFileSyncService {
   private fileChangedListeners: Set<FileChangedListener> = new Set();
   private operationListeners: Set<OperationListener> = new Set();
   private staleListeners: Set<StaleListener> = new Set();
+  private classPlanListeners: Set<ClassPlanListener> = new Set();
 
   public subscribe(runId?: string) {
     const targetRunId = runId || null;
@@ -102,6 +111,17 @@ export class ApiFileSyncService {
         }
       });
 
+      this.eventSource.addEventListener('class_plan', (e: MessageEvent) => {
+        try {
+          const data: ClassPlanEvent = JSON.parse(e.data);
+          this.classPlanListeners.forEach((listener) => {
+            try { listener(data); } catch (err) { console.error(err); }
+          });
+        } catch (err) {
+          console.warn('[FileSync] Error parsing class_plan event:', err);
+        }
+      });
+
       this.eventSource.onerror = () => {
         this.close();
         if (!this.isDestroyed) {
@@ -148,6 +168,11 @@ export class ApiFileSyncService {
   public onStale(listener: StaleListener) {
     this.staleListeners.add(listener);
     return () => this.staleListeners.delete(listener);
+  }
+
+  public onClassPlanChanged(listener: ClassPlanListener) {
+    this.classPlanListeners.add(listener);
+    return () => this.classPlanListeners.delete(listener);
   }
 
   async getFile(key: string, runId?: string): Promise<{ key: string; version: number; content: string }> {

@@ -48,3 +48,4 @@ export const schemaHistoryService: ISchemaHistoryService = new ApiSchemaHistoryS
 
 export * from './api/ApiSchemaStudioService';
 export * from './api/ApiFileSyncService';
+export * from './api/ApiClassPlanService';
