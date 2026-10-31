@@ -34,6 +34,7 @@ import { SaveDraftButton } from '../common/SaveDraftButton';
 import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffViewer';
 import { FinalOutputInputsModal } from '../common/FinalOutputInputsModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import { useStageData } from '../../hooks/useStageData';
 
 export const SchemaStudioStage: React.FC = () => {
   const { user } = useAuth();
@@ -46,12 +47,26 @@ export const SchemaStudioStage: React.FC = () => {
     saveSchemaChanges, 
     copySchemaJson,
     getSchemaVersions,
+    generateSchema,
     addAdditionalInformation,
     removeAdditionalInformation,
     updateWorkflowField
   } = useWorkflow();
   const [isLoading, setIsLoading] = useState(!workflow.schema);
   const [historyVersions, setHistoryVersions] = useState<any[]>([]);
+
+  const { data: stageData } = useStageData<any>('schema_studio');
+
+  // Hydrate from stageData if available
+  useEffect(() => {
+    if (!workflow.schema && stageData) {
+      updateWorkflowField('schema', stageData);
+      if (stageData.rawJson) {
+        setEditedSchemaJson(stageData.rawJson);
+      }
+      setIsLoading(false);
+    }
+  }, [stageData, workflow.schema, updateWorkflowField, setEditedSchemaJson]);
 
   const [isFinalOutputModalOpen, setIsFinalOutputModalOpen] = useState(false);
 
@@ -310,13 +325,21 @@ if (isLoading) {
           }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No schema generated yet. Please return to Classes stage.</p>
-          <button
-            onClick={() => setStage('classes')}
-            className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold"
-          >
-            Go to Classes
-          </button>
+          <p className="text-xs">No schema generated yet.</p>
+          <div className="flex items-center justify-center space-x-3 mt-4">
+            <button
+              onClick={() => setStage('classes')}
+              className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+            >
+              Go to Classes
+            </button>
+            <button
+              onClick={() => generateSchema && generateSchema()}
+              className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer"
+            >
+              Generate Schema
+            </button>
+          </div>
         </div>
       </div>
     );

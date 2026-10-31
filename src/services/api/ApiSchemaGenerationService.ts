@@ -33,14 +33,45 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
 
     const initData = await response.json();
 
-    // New async flow: backend returns { operationId, status: 'RUNNING' }
+    // Async flow: backend returns { operationId, status: 'RUNNING' }
     if (initData.operationId) {
       const operationId: string = initData.operationId;
       if (onOperationStarted) onOperationStarted(operationId);
 
       const statusData = await pollOperation(operationId, onProgress);
+
+      if (runId) {
+        try {
+          const res = await fetch(`${API_URL}/schema/${runId}`);
+          if (res.ok) {
+            const schemaData = await res.json();
+            if (onProgress) {
+              onProgress({ id: 'schema-done', status: 'done', label: 'Schema generated successfully' });
+            }
+            return schemaData;
+          }
+        } catch (e) {
+          console.warn('Failed to load schema from GET /api/schema/{runId}:', e);
+        }
+      }
+
       const rawSchema = statusData.schema || statusData.result || statusData;
       return this.buildSchemaModel(rawSchema, classes);
+    }
+
+    if (runId) {
+      try {
+        const res = await fetch(`${API_URL}/schema/${runId}`);
+        if (res.ok) {
+          const schemaData = await res.json();
+          if (onProgress) {
+            onProgress({ id: 'schema-done', status: 'done', label: 'Schema generated successfully' });
+          }
+          return schemaData;
+        }
+      } catch (e) {
+        console.warn('Failed to load schema from GET /api/schema/{runId}:', e);
+      }
     }
 
     // Legacy synchronous fallback

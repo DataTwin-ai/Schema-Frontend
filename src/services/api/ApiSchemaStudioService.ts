@@ -85,6 +85,27 @@ export class ApiSchemaStudioService {
     }
     return await response.json();
   }
+
+  async downloadSchema(runId: string): Promise<Blob> {
+    const response = await fetch(`${API_URL}/schema/${runId}/download`);
+    if (!response.ok) {
+      throw new Error(`Failed to download schema: ${response.statusText}`);
+    }
+    return await response.blob();
+  }
+
+  async registerSchema(data: any): Promise<any> {
+    const response = await fetch(`${API_URL}/schema/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  }
 }
 
 export const schemaStudioService = new ApiSchemaStudioService();
