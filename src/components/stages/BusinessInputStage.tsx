@@ -35,7 +35,8 @@ export const BusinessInputStage: React.FC = () => {
     generateRequirements,
     addAdditionalInformation,
     isGeneratingModalOpen,
-    setStage
+    setStage,
+    files,
   } = useWorkflow();
 
   const { data: stage1Data } = useStageData<any>('business_input');
@@ -153,6 +154,14 @@ export const BusinessInputStage: React.FC = () => {
 
       {/* 2. Main Workspace Content */}
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-4 pb-16">
+        {/* Notice if run started at a later stage */}
+        {workflow.startStage && workflow.startStage !== 'business-input' && workflow.startStage !== 'business_input' && !workflow.businessInput.highLevelRequirement && (
+          <div className="p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 text-xs flex items-center space-x-2">
+            <span className="font-semibold text-neutral-800 dark:text-neutral-200">Note:</span>
+            <span>This run started at {workflow.startStage}.</span>
+          </div>
+        )}
+
         {/* Primary Container: High-Level Business Requirement + Integrated Supporting Documents */}
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-3.5 transition-colors">
           {/* Section 1 Header */}
@@ -269,16 +278,24 @@ export const BusinessInputStage: React.FC = () => {
               </div>
             </div>
             <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-              {(workflow.caseFiles || (stage1Data as any)).map((file: any, idx: number) => (
-                <div key={file.name || idx} className="space-y-1.5">
-                  <div className="text-xs font-mono font-semibold text-neutral-800 dark:text-neutral-200">
-                    {file.name}
+              {(workflow.caseFiles || (stage1Data as any)).map((file: any, idx: number) => {
+                const fileKey = file.name ? (file.name.startsWith('case/') ? file.name : `case/${file.name}`) : '';
+                const storeRecord = files[fileKey] || (file.name ? files[file.name] : undefined);
+                const displayContent = storeRecord ? storeRecord.content : (typeof file.content === 'string' ? file.content : JSON.stringify(file.content, null, 2));
+                return (
+                  <div key={file.name || idx} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-mono font-semibold text-neutral-800 dark:text-neutral-200">
+                      <span>{file.name}</span>
+                      {storeRecord && (
+                        <span className="text-[10px] text-neutral-400 font-normal">v{storeRecord.version}</span>
+                      )}
+                    </div>
+                    <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 whitespace-pre-wrap overflow-x-auto leading-relaxed max-h-[200px] overflow-y-auto">
+                      {displayContent}
+                    </pre>
                   </div>
-                  <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 whitespace-pre-wrap overflow-x-auto leading-relaxed max-h-[200px] overflow-y-auto">
-                    {typeof file.content === 'string' ? file.content : JSON.stringify(file.content, null, 2)}
-                  </pre>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

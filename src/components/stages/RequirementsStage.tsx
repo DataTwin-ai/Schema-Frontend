@@ -18,7 +18,8 @@ import {
   History as HistoryIcon,
   Clock,
   Paperclip,
-  Loader2
+  Loader2,
+  Clipboard
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
 import { SaveDraftButton } from '../common/SaveDraftButton';
@@ -28,6 +29,8 @@ import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffVie
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { AddNewBusinessRequirementModal } from '../common/AddNewBusinessRequirementModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
+import { StaleStageBanner } from '../common/StaleStageBanner';
+import { PasteExistingModal } from '../common/PasteExistingModal';
 import { API_URL } from '../../services/api/config';
 import { useStageData } from '../../hooks/useStageData';
 
@@ -402,7 +405,16 @@ export const RequirementsStage: React.FC = () => {
     updateTechnicalRequirement,
     addAdditionalInformation,
     removeAdditionalInformation,
-    generateClasses
+    generateClasses,
+    generateRequirements,
+    staleStages,
+    clearStaleStage,
+    saveFile,
+    updateFileContent,
+    files,
+    seedRequirements,
+    stageStatus,
+    refreshStageStatus
   } = useWorkflow();
 
   const req = workflow.requirements;
@@ -413,6 +425,13 @@ export const RequirementsStage: React.FC = () => {
     type: 'edit' | 'history';
     id: string;
   } | null>(null);
+
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  useEffect(() => {
+    refreshStageStatus();
+  }, [refreshStageStatus]);
 
   const handleStartEdit = (id: string) => {
     setActiveInteraction({ type: 'edit', id });
@@ -456,7 +475,9 @@ export const RequirementsStage: React.FC = () => {
       if (!workflow.runId) {
         if (isMounted) {
           setIsLoading(false);
-          setError("No requirements generated yet and no run ID found.");
+          if (!workflow.startStage) {
+            setError(null);
+          }
         }
         return;
       }
@@ -532,12 +553,14 @@ export const RequirementsStage: React.FC = () => {
     );
   }
 
+  const isStartedLater = !!(workflow.startStage && workflow.startStage !== 'requirements' && workflow.startStage !== 'business-input' && workflow.startStage !== 'business_input');
+
   if (error || !req) {
     return (
       <div className="flex flex-col min-h-full">
         <StageActionBar
           title="Structured Requirements"
-          description="Requirements not yet generated or failed to load."
+          description={isStartedLater ? `This run started at ${workflow.startStage}.` : "Requirements not yet generated."}
           leftActions={
             <button
               onClick={() => setStage('business-input')}
@@ -547,20 +570,79 @@ export const RequirementsStage: React.FC = () => {
               <ArrowLeft className="h-4 w-4" />
             </button>
           }
+          rightActions={
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold rounded-lg text-xs transition-colors cursor-pointer shadow-xs"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>Paste existing</span>
+            </button>
+          }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          {error ? (
-            <p className="text-xs text-rose-500 mb-4">{error}</p>
+          {isStartedLater ? (
+            <div className="space-y-3">
+              <p className="text-xs">This run started at <span className="font-semibold text-neutral-900 dark:text-white">{workflow.startStage}</span>.</p>
+              <p className="text-[11px] text-neutral-500">Earlier stage data was not generated for this run.</p>
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Paste Existing Requirements
+                </button>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="space-y-3">
+              <p className="text-xs text-rose-500">{error}</p>
+              <div className="flex items-center justify-center space-x-2 pt-2">
+                <button
+                  onClick={() => setStage('business-input')}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Go to Business Input
+                </button>
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Paste Existing Requirements
+                </button>
+              </div>
+            </div>
           ) : (
-            <p className="text-xs">No requirements generated yet. Please return to the Business Input stage.</p>
+            <div className="space-y-3">
+              <p className="text-xs">No requirements generated yet.</p>
+              <div className="flex items-center justify-center space-x-2 pt-2">
+                <button
+                  onClick={() => setStage('business-input')}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Go to Business Input
+                </button>
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Paste Existing Requirements
+                </button>
+              </div>
+            </div>
           )}
-          <button
-            onClick={() => setStage('business-input')}
-            className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold"
-          >
-            Go to Business Input
-          </button>
         </div>
+        <PasteExistingModal
+          isOpen={isPasteModalOpen}
+          onClose={() => setIsPasteModalOpen(false)}
+          title="Paste Existing Requirements"
+          subtitle="Seed requirements to generate and lock a class plan directly"
+          placeholder="Paste requirements specification text here..."
+          onPaste={async (text) => {
+            await seedRequirements(text);
+          }}
+        />
       </div>
     );
   }
@@ -596,6 +678,14 @@ export const RequirementsStage: React.FC = () => {
         }
         rightActions={
           <>
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>Paste existing</span>
+            </button>
             <SaveDraftButton />
             <button
               onClick={() => setIsGenerateModalOpen(true)}
@@ -620,6 +710,37 @@ export const RequirementsStage: React.FC = () => {
 
       {/* 2. Main Workspace Content */}
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-4 pb-16">
+        {/* Stale Banner */}
+        {staleStages.requirements && (
+          <StaleStageBanner
+            reason={staleStages.requirements}
+            isRegenerating={isRegenerating}
+            onRegenerate={async () => {
+              setIsRegenerating(true);
+              try {
+                await generateRequirements(false);
+                clearStaleStage('requirements');
+              } finally {
+                setIsRegenerating(false);
+              }
+            }}
+          />
+        )}
+
+        {/* Seeded Locked Class Plan Display if present */}
+        {workflow.lockedPlanText && (
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-2">
+            <div className="flex items-center justify-between pb-1.5 border-b border-neutral-100 dark:border-neutral-800">
+              <span className="text-xs font-bold text-neutral-800 dark:text-neutral-200 flex items-center space-x-1.5">
+                <FileCheck className="h-3.5 w-3.5 text-neutral-500" />
+                <span>Locked Class Plan (Seeded)</span>
+              </span>
+            </div>
+            <pre className="text-xs font-mono text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 whitespace-pre-wrap overflow-x-auto leading-relaxed max-h-[220px] overflow-y-auto">
+              {workflow.lockedPlanText}
+            </pre>
+          </div>
+        )}
         {/* Layer Navigation Tabs (Traceability Map Tab Removed) */}
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-1.5 shadow-sm">
           <div className="flex items-center space-x-1 overflow-x-auto text-xs select-none">
@@ -987,6 +1108,18 @@ export const RequirementsStage: React.FC = () => {
         isOpen={isAddReqModalOpen}
         onClose={() => setIsAddReqModalOpen(false)}
         onSave={addBusinessRequirement}
+      />
+
+      {/* Paste Existing Requirements Modal */}
+      <PasteExistingModal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        title="Paste Existing Requirements"
+        subtitle="Seed requirements to generate and lock a class plan directly"
+        placeholder="Paste requirements specification text here..."
+        onPaste={async (text) => {
+          await seedRequirements(text);
+        }}
       />
     </div>
   );

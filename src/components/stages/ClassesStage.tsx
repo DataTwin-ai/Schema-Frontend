@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   Sparkles,
   Paperclip,
-  Eye
+  Eye,
+  Clipboard
 } from 'lucide-react';
 import { SchemaClass, ClassVersion, SchemaComponent } from '../../types';
 import { StageActionBar } from '../layout/StageActionBar';
@@ -34,6 +35,8 @@ import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { ClassViewModal } from '../classes/ClassViewModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 import { SCDPInputsModal } from './SCDPInputsModal';
+import { StaleStageBanner } from '../common/StaleStageBanner';
+import { PasteExistingModal, PasteOption } from '../common/PasteExistingModal';
 
 interface ClassRowProps {
   item: SchemaClass;
@@ -64,12 +67,19 @@ const ClassRow: React.FC<ClassRowProps> = ({
   userName,
   runId,
 }) => {
+  const { files, updateFileContent, saveFile } = useWorkflow();
+  const rawFileName = typeof item.metadata?.fileName === 'string' ? item.metadata.fileName : undefined;
+  const fileKey: string = rawFileName
+    ? (rawFileName.startsWith('output/') ? rawFileName : `output/class_prompt/${rawFileName}`)
+    : 'output/class_wise_prompts.txt';
+  const fileRecord = files[fileKey];
+
   const [editClassName, setEditClassName] = useState(item.className);
   const [editDatasource, setEditDatasource] = useState(item.datasource);
   const [editGrain, setEditGrain] = useState(item.grain);
   const [editPurpose, setEditPurpose] = useState(item.purpose);
   const [editComponents, setEditComponents] = useState<SchemaComponent[]>(item.components || []);
-  const [editRawText, setEditRawText] = useState(item.rawText || '');
+  const [editRawText, setEditRawText] = useState(fileRecord?.content ?? item.rawText ?? '');
   const [versions, setVersions] = useState<ClassVersion[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -208,8 +218,9 @@ const ClassRow: React.FC<ClassRowProps> = ({
       setEditGrain(item.grain);
       setEditPurpose(item.purpose);
       setEditComponents(JSON.parse(JSON.stringify(item.components || [])));
+      setEditRawText(fileRecord?.content ?? item.rawText ?? '');
     }
-  }, [isEditing, item]);
+  }, [isEditing, item, fileRecord?.content]);
 
   // Adjust height on edit or content change
   useEffect(() => {
@@ -238,7 +249,9 @@ const ClassRow: React.FC<ClassRowProps> = ({
         setEditGrain(returnedClass.grain || item.grain);
         setEditPurpose(returnedClass.purpose || item.purpose);
         setEditComponents(returnedClass.components || item.components || []);
-        setEditRawText(returnedClass.rawText || item.rawText || '');
+        const restoredText = returnedClass.rawText || item.rawText || '';
+        setEditRawText(restoredText);
+        updateFileContent(fileKey, restoredText, false);
         if (isHistoryOpen) loadVersions();
       }
     } catch (e) {
@@ -251,17 +264,23 @@ const ClassRow: React.FC<ClassRowProps> = ({
     const updatedFields = { rawText: editRawText };
     try {
       if (item.metadata?.fileName) {
+        updateFileContent(fileKey, editRawText, true);
+        const saveRes = await saveFile(fileKey);
+        if (!saveRes.success) {
+          throw new Error(saveRes.error || 'Failed to save file');
+        }
+
         const res = await fetch(`${API_URL}/class-prompts/${item.metadata.fileName}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'X-User-Name': userName },
           body: JSON.stringify(updatedFields)
         });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || `HTTP ${res.status}`);
+        if (res.ok) {
+          const returnedClass = await res.json();
+          onSave({ ...returnedClass, id: item.id });
+        } else {
+          onSave({ ...item, rawText: editRawText });
         }
-        const returnedClass = await res.json();
-        onSave({ ...returnedClass, id: item.id });
         if (isHistoryOpen) loadVersions();
       } else {
         onSave(updatedFields);
@@ -476,7 +495,10 @@ const ClassRow: React.FC<ClassRowProps> = ({
             </label>
             <textarea
               value={editRawText}
-              onChange={(e) => setEditRawText(e.target.value)}
+              onChange={(e) => {
+                setEditRawText(e.target.value);
+                updateFileContent(fileKey, e.target.value, true);
+              }}
               className="w-full min-h-[400px] max-h-[600px] bg-[#0d0d0d] p-4 text-[11px] font-mono text-neutral-300 placeholder-neutral-600 rounded-lg border border-neutral-700 focus:outline-none focus:border-neutral-500 leading-relaxed resize-y"
             />
           </div>
@@ -566,7 +588,13 @@ export const ClassesStage: React.FC = () => {
     generateSchema,
     addAdditionalInformation,
     removeAdditionalInformation,
-    updateWorkflowField
+    updateWorkflowField,
+    staleStages,
+    clearStaleStage,
+    seedClassPlan,
+    seedClassPrompts,
+    stageStatus,
+    refreshStageStatus
   } = useWorkflow();
   const { user } = useAuth();
   const userName = user?.name || 'You';
@@ -580,9 +608,15 @@ export const ClassesStage: React.FC = () => {
   const [isAddClassModalOpen, setIsAddClassModalOpen] = useState(false);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isInputsModalOpen, setIsInputsModalOpen] = useState(false);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: stageData } = useStageData<any>('classes');
+
+  useEffect(() => {
+    refreshStageStatus();
+  }, [refreshStageStatus]);
 
   // Hydrate from stageData if available
   useEffect(() => {
@@ -630,12 +664,40 @@ export const ClassesStage: React.FC = () => {
   const [newClassGrain, setNewClassGrain] = useState('Per itemid Monthly');
   const [classPlanExpanded, setClassPlanExpanded] = useState(false);
 
+  const pasteOptions: PasteOption[] = [
+    {
+      id: 'class-plan',
+      label: 'Locked Class Plan',
+      description: 'Paste a locked class plan (seed/class-plan). The run button will generate classes directly from this plan.',
+      placeholder: 'e.g.\n1. ClassName: PrePaidExpenseAllocation | Datasource: PrePaidReport | Trigger: 2\n2. ClassName: ExpenseReconciliation | Datasource: GeneralLedger | Trigger: 1...'
+    },
+    {
+      id: 'class-prompts',
+      label: 'Class Prompts',
+      description: 'Paste class prompts (seed/class-prompts). Can be combined text or separate class blocks.',
+      placeholder: '### CLASS_START\nClassNumber: 1\nClassName: PrePaidExpenseAllocation\n...\n### CLASS_END'
+    }
+  ];
+
+  const handlePasteSubmit = async (text: string, optionId?: string) => {
+    if (optionId === 'class-plan') {
+      await seedClassPlan(text);
+      if (generateClasses) await generateClasses();
+    } else {
+      await seedClassPrompts({ combinedText: text });
+    }
+  };
+
+  const isStartedLater = !!(workflow.startStage && workflow.startStage === 'schema_studio');
+  const isClassesReady = stageStatus?.classes?.ready ?? !!(workflow.requirements || (stageData && stageData.length > 0) || workflow.lockedPlanText);
+  const missingInputs = !isClassesReady ? 'Requirements or locked class plan' : '';
+
   if (classes.length === 0) {
     return (
       <div className="flex flex-col min-h-full">
         <StageActionBar
           title="Domain Classes Architecture"
-          description="Classes not yet generated."
+          description={isStartedLater ? `This run started at ${workflow.startStage}.` : "Classes not yet generated."}
           leftActions={
             <button
               onClick={() => setStage('requirements')}
@@ -645,24 +707,73 @@ export const ClassesStage: React.FC = () => {
               <ArrowLeft className="h-4 w-4" />
             </button>
           }
+          rightActions={
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold rounded-lg text-xs transition-colors cursor-pointer shadow-xs"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>Paste existing</span>
+            </button>
+          }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No domain classes generated yet.</p>
-          <div className="flex items-center justify-center space-x-3 mt-4">
-            <button
-              onClick={() => setStage('requirements')}
-              className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Go to Requirements
-            </button>
-            <button
-              onClick={() => generateClasses && generateClasses()}
-              className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Generate Classes
-            </button>
-          </div>
+          {isStartedLater ? (
+            <div className="space-y-3">
+              <p className="text-xs">This run started at <span className="font-semibold text-neutral-900 dark:text-white">{workflow.startStage}</span>.</p>
+              <p className="text-[11px] text-neutral-500">Class prompts were not generated for this run.</p>
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Paste Existing Class Plan / Prompts
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs">No domain classes generated yet.</p>
+              {!isClassesReady && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Missing inputs: {missingInputs}. Please complete previous stages or paste existing data.
+                </p>
+              )}
+              <div className="flex items-center justify-center space-x-3 mt-4">
+                <button
+                  onClick={() => setStage('requirements')}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Go to Requirements
+                </button>
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Paste Existing
+                </button>
+                <button
+                  onClick={() => generateClasses && generateClasses()}
+                  disabled={!isClassesReady}
+                  title={!isClassesReady ? `Disabled: Missing ${missingInputs}` : 'Generate Classes'}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Generate Classes
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+        <PasteExistingModal
+          isOpen={isPasteModalOpen}
+          onClose={() => setIsPasteModalOpen(false)}
+          title="Paste Existing Class Plan or Prompts"
+          subtitle="Seed a locked class plan or class prompts directly"
+          options={pasteOptions}
+          defaultOptionId="class-plan"
+          onPaste={handlePasteSubmit}
+        />
       </div>
     );
   }
@@ -780,6 +891,14 @@ export const ClassesStage: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer mr-2"
+            >
+              <Clipboard className="h-3.5 w-3.5 text-neutral-600 dark:text-neutral-400" />
+              <span>Paste existing</span>
+            </button>
+
+            <button
               onClick={() => setIsAddClassModalOpen(true)}
               className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
             >
@@ -800,6 +919,18 @@ export const ClassesStage: React.FC = () => {
 
       {/* 2. Main Workspace Single-Column Content */}
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-3 pb-16">
+        {(staleStages.classes || staleStages.class) && (
+          <StaleStageBanner
+            stageName="Classes"
+            reason={staleStages.classes || staleStages.class}
+            onRegenerate={async () => {
+              if (generateClasses) await generateClasses();
+              clearStaleStage('classes');
+              clearStaleStage('class');
+            }}
+          />
+        )}
+
         {/* Additional Information / Rules Banner if any */}
         {workflow.additionalInformation.length > 0 && (
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-2.5 transition-colors mb-4">
@@ -1066,6 +1197,16 @@ export const ClassesStage: React.FC = () => {
       <SCDPInputsModal
         isOpen={isInputsModalOpen}
         onClose={() => setIsInputsModalOpen(false)}
+      />
+
+      <PasteExistingModal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        title="Paste Existing Class Plan or Prompts"
+        subtitle="Seed a locked class plan or class prompts directly"
+        options={pasteOptions}
+        defaultOptionId="class-plan"
+        onPaste={handlePasteSubmit}
       />
     </div>
   );

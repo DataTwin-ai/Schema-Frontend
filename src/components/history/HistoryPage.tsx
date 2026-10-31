@@ -142,6 +142,7 @@ export const HistoryPage: React.FC = () => {
           caseDir: r.case_dir,
           runId,
           error: r.error,
+          startStage: r.startStage || r.start_stage || r.manifest?.startStage || r.manifest?.start_stage,
         });
         if (r.current_stage) {
           setStage(r.current_stage);

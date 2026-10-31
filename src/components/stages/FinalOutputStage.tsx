@@ -27,6 +27,7 @@ import {
 import { StageActionBar } from '../layout/StageActionBar';
 import { SaveDraftButton } from '../common/SaveDraftButton';
 import { GenerationProcessingModal } from '../layout/GenerationProcessingModal';
+import { StaleStageBanner } from '../common/StaleStageBanner';
 
 export const FinalOutputStage: React.FC = () => {
   const { 
@@ -34,8 +35,12 @@ export const FinalOutputStage: React.FC = () => {
     setStage, 
     setRunStatus, 
     setActiveOperation,
-
-    updateWorkflowField
+    updateWorkflowField,
+    files,
+    staleStages,
+    clearStaleStage,
+    stageStatus,
+    refreshStageStatus
   } = useWorkflow();
   
   const [copied, setCopied] = useState(false);
@@ -79,6 +84,22 @@ export const FinalOutputStage: React.FC = () => {
     fetchExisting();
     return () => { mounted = false; };
   }, [workflow.runId]);
+
+  useEffect(() => {
+    refreshStageStatus();
+  }, [refreshStageStatus]);
+
+  // Sync result from file store if result/final_output.json exists
+  useEffect(() => {
+    const file = files['result/final_output.json'];
+    if (file && file.content) {
+      try {
+        const parsed = JSON.parse(file.content);
+        setExecutionResult(parsed);
+        setHasExecuted(true);
+      } catch (e) {}
+    }
+  }, [files]);
 
   useEffect(() => {
      // Auto-trigger execution if we entered this stage with inputs and haven't executed yet
@@ -460,49 +481,59 @@ export const FinalOutputStage: React.FC = () => {
     }
   };
 
-  const { data: stageOutputData, status: stageOutputStatus, files: stageOutputFiles } = useStageData<any>('output');
+  const isOutputReady = stageStatus?.output?.ready ?? !!(workflow.schema || workflow.runId);
+  const missingInputs = !isOutputReady ? 'Generated schema' : '';
 
-  if (stageOutputStatus === 'pending' && !inputs && !hasExecuted) {
+  if (!inputs && !hasExecuted && !executionResult) {
     return (
       <div className="flex flex-col min-h-full">
-        <StageActionBar title="Final Output" description="Stage pending..." />
+        <StageActionBar
+          title="Final Output"
+          description="Waiting for inputs..."
+          leftActions={
+            <button
+              onClick={() => setStage('schema')}
+              className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md transition-colors"
+              title="Back to Schema Studio"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          }
+        />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-           <p className="text-xs">Final output has not been generated yet. Please return to Business Input stage.</p>
-           <button onClick={() => setStage('business-input')} className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold">
-             Go to Business Input
-           </button>
+           <p className="text-xs">No execution inputs configured yet.</p>
+           {!isOutputReady && (
+             <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+               Missing inputs: {missingInputs}. Please complete Schema Studio first.
+             </p>
+           )}
+           <div className="flex items-center justify-center space-x-3 mt-4">
+             <button
+               onClick={() => setStage('schema')}
+               className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+             >
+               Go to Schema Studio
+             </button>
+             <button
+               onClick={() => setIsModalOpen(true)}
+               disabled={!isOutputReady}
+               title={!isOutputReady ? `Disabled: Missing ${missingInputs}` : 'Configure Execution Inputs'}
+               className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold cursor-pointer"
+             >
+               Configure Execution Inputs
+             </button>
+           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (stageOutputStatus === 'failed' && !inputs && !hasExecuted) {
-    return (
-      <div className="flex flex-col min-h-full">
-        <StageActionBar title="Final Output" description="Stage failed" />
-        <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400 max-w-md mx-auto space-y-3">
-           <h3 className="text-sm font-semibold text-rose-700 dark:text-rose-300">Final Output Stage Failed</h3>
-           <p className="text-xs font-mono bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 p-2 rounded text-rose-700 dark:text-rose-300">
-             {workflow.error || 'Execution failed.'}
-           </p>
-           <button onClick={() => setIsModalOpen(true)} className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold">
-             Configure & Retry
-           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!inputs && !hasExecuted) {
-    return (
-      <div className="flex flex-col min-h-full">
-        <StageActionBar title="Final Output" description="Waiting for inputs..." />
-        <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-           <p className="text-xs">No inputs provided yet.</p>
-           <button onClick={() => setIsModalOpen(true)} className="mt-4 px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold">
-             Configure Execution Inputs
-           </button>
-        </div>
+        <FinalOutputInputsModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          initialInputs={workflow.finalOutputInputs}
+          onRun={(newInputs) => {
+            updateWorkflowField('finalOutputInputs', newInputs);
+            setIsModalOpen(false);
+            executeSchema(newInputs);
+          }}
+        />
       </div>
     );
   }
@@ -562,6 +593,21 @@ export const FinalOutputStage: React.FC = () => {
       />
 
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-4 pb-16">
+        {(staleStages.output || staleStages.final_output) && (
+          <StaleStageBanner
+            stageName="Final Output"
+            reason={staleStages.output || staleStages.final_output}
+            onRegenerate={async () => {
+              if (workflow.finalOutputInputs) {
+                await executeSchema(workflow.finalOutputInputs);
+              } else {
+                setIsModalOpen(true);
+              }
+              clearStaleStage('output');
+              clearStaleStage('final_output');
+            }}
+          />
+        )}
         
         {/* Top Inputs Used Card */}
         <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-sm space-y-4">

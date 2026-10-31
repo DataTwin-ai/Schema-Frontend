@@ -24,7 +24,8 @@ import {
   X,
   Sparkles,
   Paperclip,
-  Trash2
+  Trash2,
+  Clipboard
 } from 'lucide-react';
 import { SchemaTreeNode } from '../../types';
 import { schemaStudioService } from '../../services/api/ApiSchemaStudioService';
@@ -35,6 +36,8 @@ import { VersionDiffViewer, VersionOption } from '../requirements/VersionDiffVie
 import { FinalOutputInputsModal } from '../common/FinalOutputInputsModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 import { useStageData } from '../../hooks/useStageData';
+import { StaleStageBanner } from '../common/StaleStageBanner';
+import { PasteExistingModal } from '../common/PasteExistingModal';
 
 export const SchemaStudioStage: React.FC = () => {
   const { user } = useAuth();
@@ -50,12 +53,43 @@ export const SchemaStudioStage: React.FC = () => {
     generateSchema,
     addAdditionalInformation,
     removeAdditionalInformation,
-    updateWorkflowField
+    updateWorkflowField,
+    files,
+    updateFileContent,
+    saveFile,
+    staleStages,
+    clearStaleStage,
+    seedSchema,
+    stageStatus,
+    refreshStageStatus
   } = useWorkflow();
   const [isLoading, setIsLoading] = useState(!workflow.schema);
   const [historyVersions, setHistoryVersions] = useState<any[]>([]);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
 
   const { data: stageData } = useStageData<any>('schema_studio');
+
+  useEffect(() => {
+    refreshStageStatus();
+  }, [refreshStageStatus]);
+
+  // Sync with file store if output/schema_output.json exists
+  useEffect(() => {
+    const file = files['output/schema_output.json'];
+    if (file && file.content) {
+      if (file.content !== editedSchemaJson && !file.dirty) {
+        setEditedSchemaJson(file.content);
+        try {
+          const parsed = JSON.parse(file.content);
+          updateWorkflowField('schema', {
+            ...(workflow.schema || {}),
+            rawJson: file.content,
+            classes: parsed.classes || parsed.SchemaClass?.children || []
+          });
+        } catch (e) {}
+      }
+    }
+  }, [files, editedSchemaJson, updateWorkflowField, workflow.schema, setEditedSchemaJson]);
 
   // Hydrate from stageData if available
   useEffect(() => {
@@ -131,6 +165,8 @@ export const SchemaStudioStage: React.FC = () => {
       
       setEditedSchemaJson(data.rawJson);
       updateWorkflowField('schema', data);
+      updateFileContent('output/schema_output.json', data.rawJson, false);
+      await saveFile('output/schema_output.json');
       
       setSaveStatus({ type: 'success', message: `Saved ${nodeTitle}` });
       setTimeout(() => setSaveStatus({ type: null, message: '' }), 2000);
@@ -308,12 +344,16 @@ if (isLoading) {
     return <div className="flex h-full items-center justify-center p-12"><div className="text-sm text-neutral-500">Loading schema...</div></div>;
   }
 
+  const isStartedLater = !!(workflow.startStage && workflow.startStage === 'output');
+  const isSchemaReady = stageStatus?.schema_studio?.ready ?? !!((workflow.classes && workflow.classes.length > 0) || (stageData && stageData.classes && stageData.classes.length > 0));
+  const missingInputs = !isSchemaReady ? 'Domain classes / class prompts' : '';
+
   if (!workflow.schema) {
     return (
       <div className="flex flex-col min-h-full">
         <StageActionBar
           title="Schema Studio"
-          description="Schema not yet generated."
+          description={isStartedLater ? `This run started at ${workflow.startStage}.` : "Schema not yet generated."}
           leftActions={
             <button
               onClick={() => setStage('classes')}
@@ -323,24 +363,75 @@ if (isLoading) {
               <ArrowLeft className="h-4 w-4" />
             </button>
           }
+          rightActions={
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold rounded-lg text-xs transition-colors cursor-pointer shadow-xs"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>Paste existing</span>
+            </button>
+          }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
-          <p className="text-xs">No schema generated yet.</p>
-          <div className="flex items-center justify-center space-x-3 mt-4">
-            <button
-              onClick={() => setStage('classes')}
-              className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Go to Classes
-            </button>
-            <button
-              onClick={() => generateSchema && generateSchema()}
-              className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Generate Schema
-            </button>
-          </div>
+          {isStartedLater ? (
+            <div className="space-y-3">
+              <p className="text-xs">This run started at <span className="font-semibold text-neutral-900 dark:text-white">{workflow.startStage}</span>.</p>
+              <p className="text-[11px] text-neutral-500">Schema was not generated for this run.</p>
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  Paste Existing Schema JSON
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs">No schema generated yet.</p>
+              {!isSchemaReady && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Missing inputs: {missingInputs}. Please complete previous stages or paste existing schema.
+                </p>
+              )}
+              <div className="flex items-center justify-center space-x-3 mt-4">
+                <button
+                  onClick={() => setStage('classes')}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Go to Classes
+                </button>
+                <button
+                  onClick={() => setIsPasteModalOpen(true)}
+                  className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Paste Existing
+                </button>
+                <button
+                  onClick={() => generateSchema && generateSchema()}
+                  disabled={!isSchemaReady}
+                  title={!isSchemaReady ? `Disabled: Missing ${missingInputs}` : 'Generate Schema'}
+                  className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Generate Schema
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+        <PasteExistingModal
+          isOpen={isPasteModalOpen}
+          onClose={() => setIsPasteModalOpen(false)}
+          title="Paste Existing Schema JSON"
+          subtitle="Seed schema JSON directly into Schema Studio"
+          validateJson={true}
+          onPaste={async (text) => {
+            const parsed = JSON.parse(text);
+            await seedSchema(parsed);
+          }}
+        />
       </div>
     );
   }
@@ -386,10 +477,16 @@ if (isLoading) {
     setIsFinalOutputModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const result = saveSchemaChanges();
     if (result.success) {
-      setSaveStatus({ type: 'success', message: 'Schema changes saved successfully to workflow model!' });
+      updateFileContent('output/schema_output.json', editedSchemaJson, false);
+      const saveRes = await saveFile('output/schema_output.json');
+      if (saveRes.success) {
+        setSaveStatus({ type: 'success', message: 'Schema changes saved successfully!' });
+      } else {
+        setSaveStatus({ type: 'error', message: saveRes.error || 'Failed to save schema to server' });
+      }
       setTimeout(() => setSaveStatus({ type: null, message: '' }), 3000);
     } else {
       setSaveStatus({ type: 'error', message: result.error || 'Syntax error in JSON' });
@@ -537,6 +634,13 @@ if (isLoading) {
               <span>{copied ? 'Copied' : 'Copy'}</span>
             </button>
             <button
+              onClick={() => setIsPasteModalOpen(true)}
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+            >
+              <Clipboard className="h-3.5 w-3.5" />
+              <span>Paste existing</span>
+            </button>
+            <button
               onClick={() => setIsHistoryOpen(!isHistoryOpen)}
               className={`flex items-center space-x-1 px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer ${
                 isHistoryOpen
@@ -567,6 +671,17 @@ if (isLoading) {
 
       {/* 2. Main Workspace Content */}
       <div className="flex-1 p-5 lg:p-6 max-w-5xl w-full mx-auto space-y-4 pb-16">
+        {(staleStages.schema || staleStages.schema_studio) && (
+          <StaleStageBanner
+            stageName="Schema Studio"
+            reason={staleStages.schema || staleStages.schema_studio}
+            onRegenerate={async () => {
+              if (generateSchema) await generateSchema();
+              clearStaleStage('schema');
+              clearStaleStage('schema_studio');
+            }}
+          />
+        )}
         {/* Additional Information / Rules Banner if any */}
         {workflow.additionalInformation.length > 0 && (
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-2.5 transition-colors">
@@ -803,7 +918,10 @@ if (isLoading) {
                 <textarea
                   readOnly={!isEditing}
                   value={editedSchemaJson}
-                  onChange={(e) => setEditedSchemaJson(e.target.value)}
+                  onChange={(e) => {
+                    setEditedSchemaJson(e.target.value);
+                    updateFileContent('output/schema_output.json', e.target.value, true);
+                  }}
                   spellCheck={false}
                   className={`w-full h-full min-h-[440px] p-4 font-mono text-xs leading-relaxed resize-none focus:outline-none transition-colors ${
                     !isEditing
@@ -835,6 +953,18 @@ if (isLoading) {
           updateWorkflowField('finalOutputInputs', inputs);
           setIsFinalOutputModalOpen(false);
           setStage('output');
+        }}
+      />
+
+      <PasteExistingModal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        title="Paste Existing Schema JSON"
+        subtitle="Seed schema JSON directly into Schema Studio"
+        validateJson={true}
+        onPaste={async (text) => {
+          const parsed = JSON.parse(text);
+          await seedSchema(parsed);
         }}
       />
     </div>

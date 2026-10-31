@@ -22,19 +22,15 @@ const stages: StageConfig[] = [
 export const WorkflowNavigation: React.FC = () => {
   const { workflow, setStage } = useWorkflow();
 
-  const isStageAccessible = (stageId: WorkflowStage) => {
-    if (stageId === 'business-input') return true;
-    if (stageId === 'requirements') return !!workflow.requirements;
-    if (stageId === 'classes') return !!workflow.requirements;
-    if (stageId === 'schema') return !!workflow.schema;
-    if (stageId === 'output') return !!workflow.schema;
-    return false;
+  const isStageAccessible = (_stageId: WorkflowStage) => {
+    // Feature 2: All stages reachable from navigation even when earlier stages have no data
+    return true;
   };
 
   const isStageCompleted = (stageIdx: number) => {
-    if (stageIdx === 0) return !!workflow.requirements;
-    if (stageIdx === 1) return !!workflow.requirements && (workflow.stage === 'classes' || workflow.stage === 'schema' || workflow.stage === 'output' || !!workflow.schema);
-    if (stageIdx === 2) return !!workflow.schema;
+    if (stageIdx === 0) return !!workflow.requirements || workflow.startStage === 'requirements' || workflow.startStage === 'classes' || workflow.startStage === 'schema_studio';
+    if (stageIdx === 1) return (!!workflow.requirements && (workflow.stage === 'classes' || workflow.stage === 'schema' || workflow.stage === 'output' || !!workflow.schema)) || workflow.startStage === 'classes' || workflow.startStage === 'schema_studio';
+    if (stageIdx === 2) return !!workflow.schema || workflow.startStage === 'schema_studio';
     if (stageIdx === 3) return !!workflow.schema && workflow.stage === 'output';
     if (stageIdx === 4) return false;
     return false;
