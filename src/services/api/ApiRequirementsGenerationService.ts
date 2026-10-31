@@ -11,7 +11,7 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     supportingDocs: SupportingDocument[],
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void
-  ): Promise<{ resultText: string; runId: string }> {
+  ): Promise<{ resultText: string; runId: string; caseDir?: string }> {
     if (onProgress) {
       onProgress({
         id: 'req-init',
@@ -56,6 +56,7 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       const contentType = response.headers.get("content-type");
       let resultText = '';
       let runId = '';
+      let caseDir = '';
 
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -69,17 +70,19 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
           
           const statusData = await pollOperation(operationId, onProgress);
           
-          if (!statusData.generatedBusinessRequirement || statusData.generatedBusinessRequirement.trim() === '') {
+          resultText = statusData.generatedBusinessRequirement || statusData.resultText || '';
+          if (!resultText || resultText.trim() === '') {
             throw new Error("Backend returned COMPLETED but generatedBusinessRequirement is empty or missing.");
           }
-          resultText = statusData.generatedBusinessRequirement;
           runId = statusData.runId || '';
+          caseDir = statusData.caseDir || '';
         } else {
-          if (!data.generatedBusinessRequirement || data.generatedBusinessRequirement.trim() === '') {
+          resultText = data.generatedBusinessRequirement || data.resultText || '';
+          if (!resultText || resultText.trim() === '') {
             throw new Error("Backend response missing generatedBusinessRequirement.");
           }
-          resultText = data.generatedBusinessRequirement;
           runId = data.runId || '';
+          caseDir = data.caseDir || '';
         }
       } else {
         resultText = await response.text();
@@ -94,7 +97,7 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       }
 
 
-      return { resultText, runId };
+      return { resultText, runId, caseDir };
     } catch (error: any) {
       if (onProgress) {
         onProgress({
@@ -165,5 +168,13 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
       generatedAt: requirementsData.generatedAt || new Date().toISOString(),
       lastEditedAt: requirementsData.lastEditedAt
     } as RequirementsModel;
+  }
+
+  async getCaseFiles(runId: string): Promise<Array<{ name: string; content: string }>> {
+    const res = await fetch(`${API_URL}/runs/${runId}/case-files`);
+    if (!res.ok) {
+      throw new Error(`Failed to load case files: ${res.statusText}`);
+    }
+    return res.json();
   }
 }

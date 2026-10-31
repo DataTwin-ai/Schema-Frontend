@@ -23,11 +23,13 @@ import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUplo
 import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useStageData } from '../../hooks/useStageData';
 
 
 export const BusinessInputStage: React.FC = () => {
   const { 
     workflow, 
+    setWorkflow,
     updateBusinessInput, 
     generateBusinessRequirement,
     generateRequirements,
@@ -36,6 +38,8 @@ export const BusinessInputStage: React.FC = () => {
     setStage
   } = useWorkflow();
 
+  const { data: stage1Data } = useStageData<any>('business_input');
+
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isGenerateReqModalOpen, setIsGenerateReqModalOpen] = useState(false);
   
@@ -43,6 +47,23 @@ export const BusinessInputStage: React.FC = () => {
   const [knowledgeData, setKnowledgeData] = useState<{ filename: string; content: string } | null>(null);
   const [isKnowledgeLoading, setIsKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (workflow.runId && (!workflow.caseFiles || workflow.caseFiles.length === 0)) {
+      fetch(`${API_URL}/runs/${workflow.runId}/case-files`)
+        .then(res => res.ok ? res.json() : [])
+        .then(files => {
+          if (Array.isArray(files) && files.length > 0) {
+            setWorkflow((prev: any) => ({
+              ...prev,
+              caseFiles: files,
+              outputs: { ...prev.outputs, business_input: files }
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [workflow.runId, workflow.caseFiles, setWorkflow]);
 
   const fetchKnowledgeData = async () => {
     setIsKnowledgeModalOpen(true);
@@ -103,15 +124,15 @@ export const BusinessInputStage: React.FC = () => {
                 <span>Generate Again</span>
               </button>
 
-              {/* Primary Action: Generate Requirements */}
+              {/* Primary Action: Next */}
               <button
                 type="button"
-                onClick={() => setIsGenerateReqModalOpen(true)}
+                onClick={() => setStage('requirements')}
                 disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                 className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
-                title="Accept Business Requirement and generate structured requirements"
+                title="Accept Business Requirement and move to structured requirements"
               >
-                <span>Generate Requirements</span>
+                <span>Next</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -123,7 +144,7 @@ export const BusinessInputStage: React.FC = () => {
               className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span>Generate Business Requirement</span>
+              <span>Generate Requirements</span>
             </button>
           )}
           </div>
@@ -207,13 +228,7 @@ export const BusinessInputStage: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (workflow.requirements) {
-                      setStage('requirements');
-                    } else {
-                      setIsGenerateReqModalOpen(true);
-                    }
-                  }}
+                  onClick={() => setStage('requirements')}
                   disabled={!isGeneratedBRValid || isGeneratingModalOpen}
                   className="flex items-center space-x-1 px-3 py-1 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed font-semibold rounded text-xs transition-colors cursor-pointer"
                 >
@@ -235,6 +250,35 @@ export const BusinessInputStage: React.FC = () => {
                 placeholder="Generated business requirement will appear here..."
                 className="w-full min-h-[380px] lg:min-h-[420px] max-h-[600px] bg-neutral-50/50 dark:bg-neutral-950 p-4 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-600 leading-relaxed resize-y focus:outline-none"
               />
+            </div>
+          </div>
+        )}
+
+        {/* Case Output Files Panel */}
+        {((workflow.caseFiles && workflow.caseFiles.length > 0) || (stage1Data && Array.isArray(stage1Data) && stage1Data.length > 0)) && (
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-4 transition-colors">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
+                <label className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                  Case Output Files
+                </label>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
+                  {(workflow.caseFiles || stage1Data).length} files
+                </span>
+              </div>
+            </div>
+            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+              {(workflow.caseFiles || (stage1Data as any)).map((file: any, idx: number) => (
+                <div key={file.name || idx} className="space-y-1.5">
+                  <div className="text-xs font-mono font-semibold text-neutral-800 dark:text-neutral-200">
+                    {file.name}
+                  </div>
+                  <pre className="text-[11px] font-mono text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-950 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 whitespace-pre-wrap overflow-x-auto leading-relaxed max-h-[200px] overflow-y-auto">
+                    {typeof file.content === 'string' ? file.content : JSON.stringify(file.content, null, 2)}
+                  </pre>
+                </div>
+              ))}
             </div>
           </div>
         )}

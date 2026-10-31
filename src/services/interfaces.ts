@@ -25,9 +25,11 @@ export interface IRequirementsGenerationService {
     supportingDocs: SupportingDocument[],
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void
-  ): Promise<{ resultText: string; runId: string }>;
+  ): Promise<{ resultText: string; runId: string; caseDir?: string }>;
 
   generateRequirements(input: BusinessInput, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<RequirementsModel>;
+
+  getCaseFiles?(runId: string): Promise<Array<{ name: string; content: string }>>;
 }
 
 export interface IClassGenerationService {

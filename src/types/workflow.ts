@@ -118,4 +118,10 @@ export interface SchemaGenerationWorkflow {
   runId?: string;
   lastError?: string;
   caseName?: string;
+  caseDir?: string;
+  caseFiles?: Array<{ name: string; content: string }>;
+  byStage?: Record<string, { status: "completed" | "failed" | "pending"; files: string[]; data: unknown }>;
+  outputs?: Record<string, unknown>;
+  error?: string;
+  completedStages?: string[];
 }

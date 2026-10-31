@@ -532,7 +532,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     }));
 
     try {
-      const { resultText: generatedText, runId } = await requirementsService.generateBusinessRequirement(
+      const { resultText: generatedText, runId, caseDir } = await requirementsService.generateBusinessRequirement(
         workflow.businessInput.highLevelRequirement,
         workflow.businessInput.supportingDocuments,
         (step: GenerationProgressStep) => {
@@ -557,14 +557,28 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         }
       );
 
-
-            if (!generatedText || generatedText.trim() === '') {
+      if (!generatedText || generatedText.trim() === '') {
         throw new Error("Received empty generatedBusinessRequirement from service.");
+      }
+
+      let caseFiles: Array<{ name: string; content: string }> = [];
+      if (runId && requirementsService.getCaseFiles) {
+        try {
+          caseFiles = await requirementsService.getCaseFiles(runId);
+        } catch (cfErr) {
+          console.warn("Could not fetch case files:", cfErr);
+        }
       }
 
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         runId,
+        caseDir,
+        caseFiles,
+        outputs: {
+          ...prev.outputs,
+          business_input: caseFiles
+        },
         businessInput: {
           ...prev.businessInput,
           generatedBusinessRequirement: generatedText,
