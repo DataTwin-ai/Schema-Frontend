@@ -1,7 +1,7 @@
 'use client';
 import { API_URL } from '../services/api/config';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
   WorkflowStage,
   GenerationStatus,
@@ -41,6 +41,10 @@ import {
   schemaHistoryService,
 } from '../services';
 import { formatClassSpecification } from '../utils/classUtils';
+
+import { apiFileSyncService, FileChangedEvent, OperationEvent, StaleEvent } from '../services/api/ApiFileSyncService';
+import { ConflictResolutionModal, ConflictInfo } from '../components/common/ConflictResolutionModal';
+import { FileChangedToast, DirtyFileNotice } from '../components/common/FileChangedToast';
 
 interface WorkflowContextValue {
   workflow: SchemaGenerationWorkflow;
@@ -159,8 +163,35 @@ interface WorkflowContextValue {
     derived?: Record<string, unknown>;
     caseDir?: string;
     runId?: string;
+    startStage?: string;
     error?: string;
   }) => void;
+
+  // Feature 1: File Store & Sync
+  files: Record<string, { content: string; version: number; dirty: boolean; originalContent?: string }>;
+  getFileContent: (key: string) => string | undefined;
+  updateFileContent: (key: string, content: string, markDirty?: boolean) => void;
+  saveFile: (key: string, overrideBaseVersion?: number) => Promise<{ success: boolean; version?: number; error?: string }>;
+  fetchFile: (key: string) => Promise<{ key: string; version: number; content: string }>;
+  conflictInfo: ConflictInfo | null;
+  setConflictInfo: (info: ConflictInfo | null) => void;
+  dirtyFileNotice: DirtyFileNotice | null;
+  setDirtyFileNotice: (notice: DirtyFileNotice | null) => void;
+  handleConflictKeepMine: (conflict: ConflictInfo) => Promise<void>;
+  handleConflictTakeServer: (conflict: ConflictInfo) => void;
+  handleReloadDirtyNotice: (notice: DirtyFileNotice) => void;
+
+  // Stale Stages
+  staleStages: Record<string, string>;
+  clearStaleStage: (stage: string) => void;
+
+  // Feature 2: Start from Any Screen & Seed Endpoints
+  stageStatus: Record<string, { ready?: boolean; completed?: boolean; stale?: boolean; startStage?: string }> | null;
+  refreshStageStatus: (targetRunId?: string) => Promise<any>;
+  seedRequirements: (requirementsText: string) => Promise<any>;
+  seedClassPlan: (classPlanText: string) => Promise<any>;
+  seedClassPrompts: (promptsOrCombined: { prompts?: any[]; combinedText?: string }) => Promise<any>;
+  seedSchema: (schemaJson: any) => Promise<any>;
 }
 
 const initialWorkflow: SchemaGenerationWorkflow = {
@@ -207,6 +238,440 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [currentHistoryRecord, setCurrentHistoryRecord] = useState<HistoryRecord | null>(null);
   
   const [activeOperation, setActiveOperation] = useState<any>(null);
+
+  // Feature 1: File Store & Sync State
+  const [files, setFiles] = useState<Record<string, { content: string; version: number; dirty: boolean; originalContent?: string }>>({});
+  const filesRef = useRef(files);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
+  const [dirtyFileNotice, setDirtyFileNotice] = useState<DirtyFileNotice | null>(null);
+  const [staleStages, setStaleStages] = useState<Record<string, string>>({});
+  const [stageStatus, setStageStatus] = useState<Record<string, { ready?: boolean; completed?: boolean; stale?: boolean; startStage?: string }> | null>(null);
+
+  const getFileContent = useCallback((key: string): string | undefined => {
+    return files[key]?.content;
+  }, [files]);
+
+  const updateFileContent = useCallback((key: string, content: string, markDirty = true) => {
+    setFiles(prev => {
+      const existing = prev[key] || { content: '', version: 1, dirty: false, originalContent: content };
+      return {
+        ...prev,
+        [key]: {
+          ...existing,
+          content,
+          dirty: markDirty,
+          originalContent: existing.originalContent ?? existing.content
+        }
+      };
+    });
+  }, []);
+
+  const fetchFile = useCallback(async (key: string) => {
+    const data = await apiFileSyncService.getFile(key, workflow.runId);
+    setFiles(prev => ({
+      ...prev,
+      [key]: {
+        content: data.content,
+        version: data.version,
+        dirty: false,
+        originalContent: data.content
+      }
+    }));
+    return data;
+  }, [workflow.runId]);
+
+  const saveFile = useCallback(async (key: string, overrideBaseVersion?: number): Promise<{ success: boolean; version?: number; error?: string }> => {
+    const current = filesRef.current[key];
+    const content = current ? current.content : '';
+    const baseVersion = overrideBaseVersion !== undefined ? overrideBaseVersion : (current ? current.version : 1);
+    try {
+      const res = await apiFileSyncService.putFile(key, content, baseVersion, workflow.runId);
+      setFiles(prev => ({
+        ...prev,
+        [key]: {
+          content,
+          version: res.version,
+          dirty: false,
+          originalContent: content
+        }
+      }));
+      setConflictInfo(prev => (prev && prev.key === key ? null : prev));
+      return { success: true, version: res.version };
+    } catch (err: any) {
+      if (err.status === 409) {
+        setConflictInfo({
+          key,
+          localContent: content,
+          serverContent: err.currentContent || '',
+          serverVersion: err.currentVersion || (baseVersion + 1)
+        });
+        return { success: false, error: 'Version conflict' };
+      }
+      return { success: false, error: err.message || 'Failed to save file' };
+    }
+  }, [workflow.runId]);
+
+  const handleConflictKeepMine = useCallback(async (conflict: ConflictInfo) => {
+    await saveFile(conflict.key, conflict.serverVersion);
+    setConflictInfo(null);
+  }, [saveFile]);
+
+  const handleConflictTakeServer = useCallback((conflict: ConflictInfo) => {
+    setFiles(prev => ({
+      ...prev,
+      [conflict.key]: {
+        content: conflict.serverContent,
+        version: conflict.serverVersion,
+        dirty: false,
+        originalContent: conflict.serverContent
+      }
+    }));
+    if (conflict.key.endsWith('schema_output.json')) {
+      setEditedSchemaJson(conflict.serverContent);
+      try {
+        const parsed = JSON.parse(conflict.serverContent);
+        setWorkflow(prev => prev.schema ? { ...prev, schema: { ...prev.schema, root: parsed, rawJson: conflict.serverContent } } : prev);
+      } catch {}
+    } else if (conflict.key.endsWith('00_Current_Requirements.txt')) {
+      setWorkflow(prev => prev.requirements ? { ...prev, requirements: { ...prev.requirements, currentRequirementsText: conflict.serverContent } as any } : prev);
+    }
+    setConflictInfo(null);
+  }, []);
+
+  const handleReloadDirtyNotice = useCallback((notice: DirtyFileNotice) => {
+    setFiles(prev => ({
+      ...prev,
+      [notice.key]: {
+        content: notice.serverContent,
+        version: notice.serverVersion,
+        dirty: false,
+        originalContent: notice.serverContent
+      }
+    }));
+    if (notice.key.endsWith('schema_output.json')) {
+      setEditedSchemaJson(notice.serverContent);
+      try {
+        const parsed = JSON.parse(notice.serverContent);
+        setWorkflow(prev => prev.schema ? { ...prev, schema: { ...prev.schema, root: parsed, rawJson: notice.serverContent } } : prev);
+      } catch {}
+    } else if (notice.key.endsWith('00_Current_Requirements.txt')) {
+      setWorkflow(prev => prev.requirements ? { ...prev, requirements: { ...prev.requirements, currentRequirementsText: notice.serverContent } as any } : prev);
+    }
+    setDirtyFileNotice(null);
+  }, []);
+
+  const clearStaleStage = useCallback((stage: string) => {
+    setStaleStages(prev => {
+      const copy = { ...prev };
+      delete copy[stage.toLowerCase()];
+      delete copy[stage];
+      return copy;
+    });
+  }, []);
+
+  const syncRunIdToUrl = useCallback((runId?: string) => {
+    if (typeof window === 'undefined' || !runId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('runId') !== runId) {
+      url.searchParams.set('runId', runId);
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
+  // Sync runId to URL whenever workflow.runId changes
+  useEffect(() => {
+    if (workflow.runId) {
+      syncRunIdToUrl(workflow.runId);
+    }
+  }, [workflow.runId, syncRunIdToUrl]);
+
+  // Read runId from URL on mount if available
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const qRunId = params.get('runId');
+    if (qRunId && !workflow.runId) {
+      setWorkflow(prev => ({ ...prev, runId: qRunId }));
+      fetch(`${API_URL}/runs/${qRunId}/manifest`)
+        .then(res => res.ok ? res.json() : null)
+        .then(manifest => {
+          if (manifest) {
+            hydrate({
+              runId: qRunId,
+              caseDir: manifest.caseDir,
+              startStage: manifest.startStage,
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Subscribe to live SSE events with backoff and cleanup
+  useEffect(() => {
+    apiFileSyncService.subscribe(workflow.runId);
+
+    const unsubFile = apiFileSyncService.onFileChanged(async (event) => {
+      try {
+        const data = await apiFileSyncService.getFile(event.key, workflow.runId);
+        const existing = filesRef.current[event.key];
+        if (existing && existing.dirty) {
+          setDirtyFileNotice({
+            key: event.key,
+            serverContent: data.content,
+            serverVersion: data.version
+          });
+        } else {
+          setFiles(prev => ({
+            ...prev,
+            [event.key]: {
+              content: data.content,
+              version: data.version,
+              dirty: false,
+              originalContent: data.content
+            }
+          }));
+
+          if (event.key.endsWith('schema_output.json')) {
+            setEditedSchemaJson(data.content);
+            try {
+              const parsed = JSON.parse(data.content);
+              setWorkflow(prev => prev.schema ? { ...prev, schema: { ...prev.schema, root: parsed, rawJson: data.content } } : prev);
+            } catch {}
+          } else if (event.key.includes('class_prompt/') || event.key.endsWith('class_wise_prompts.txt')) {
+            if (workflow.runId) {
+              fetch(`${API_URL}/runs/${workflow.runId}/classes`)
+                .then(r => r.ok ? r.json() : null)
+                .then(clsData => {
+                  if (clsData && clsData.classes) {
+                    setWorkflow(prev => ({ ...prev, classes: clsData.classes, outputs: { ...prev.outputs, classes: clsData.classes } }));
+                  }
+                })
+                .catch(() => {});
+            }
+          } else if (event.key.endsWith('00_Current_Requirements.txt')) {
+            setWorkflow(prev => prev.requirements ? { ...prev, requirements: { ...prev.requirements, currentRequirementsText: data.content } as any } : prev);
+          } else if (event.key.endsWith('final_output.json')) {
+            if (workflow.runId) {
+              fetch(`${API_URL}/runs/${workflow.runId}/final-output`)
+                .then(r => r.ok ? r.json() : null)
+                .then(resData => {
+                  if (resData && !resData.error) {
+                    setWorkflow(prev => ({ ...prev, outputs: { ...prev.outputs, final_output: resData } }));
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[WorkflowContext] Failed to refetch changed file:', e);
+      }
+    });
+
+    const unsubStale = apiFileSyncService.onStale((event) => {
+      setStaleStages(prev => ({
+        ...prev,
+        [event.stage.toLowerCase()]: event.reason,
+        [event.stage]: event.reason,
+      }));
+    });
+
+    const unsubOp = apiFileSyncService.onOperation((event) => {
+      setActiveOperation((prev: any) => {
+        if (prev && prev.operationId === event.operationId) {
+          return {
+            ...prev,
+            status: event.status,
+            progress: event.progress?.percent ?? prev.progress,
+            message: event.progress?.step ?? prev.message
+          };
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      unsubFile();
+      unsubStale();
+      unsubOp();
+    };
+  }, [workflow.runId]);
+
+  const refreshStageStatus = useCallback(async (targetRunId?: string) => {
+    const rId = targetRunId || workflow.runId;
+    if (!rId) return null;
+    try {
+      const res = await fetch(`${API_URL}/runs/${rId}/stage-status`);
+      if (res.ok) {
+        const data = await res.json();
+        setStageStatus(data.stages || null);
+        if (data.startStage) {
+          setWorkflow(prev => ({ ...prev, startStage: data.startStage }));
+        }
+        return data;
+      }
+    } catch (e) {
+      console.warn('[WorkflowContext] stage-status check failed:', e);
+    }
+    return null;
+  }, [workflow.runId]);
+
+  const seedRequirements = useCallback(async (requirementsText: string) => {
+    const res = await fetch(`${API_URL}/runs/seed/requirements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: workflow.runId || undefined, requirementsText })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Failed to seed requirements (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    const newRunId = data.runId;
+    if (newRunId) {
+      setWorkflow(prev => ({
+        ...prev,
+        runId: newRunId,
+        startStage: 'requirements',
+        lockedPlanText: data.lockedPlanText,
+        outputs: { ...prev.outputs, requirements: data }
+      }));
+      syncRunIdToUrl(newRunId);
+      apiFileSyncService.subscribe(newRunId);
+    }
+    if (data.lockedPlanText) {
+      setFiles(prev => ({
+        ...prev,
+        'input/01_Locked_Class_Plan.txt': {
+          content: data.lockedPlanText,
+          version: 1,
+          dirty: false,
+          originalContent: data.lockedPlanText
+        },
+        'input/00_Current_Requirements.txt': {
+          content: requirementsText,
+          version: 1,
+          dirty: false,
+          originalContent: requirementsText
+        }
+      }));
+    }
+    return data;
+  }, [workflow.runId, syncRunIdToUrl]);
+
+  const seedClassPlan = useCallback(async (classPlanText: string) => {
+    const res = await fetch(`${API_URL}/runs/seed/class-plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: workflow.runId || undefined, classPlanText })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Failed to seed class plan (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    const newRunId = data.runId;
+    if (newRunId) {
+      setWorkflow(prev => ({
+        ...prev,
+        runId: newRunId,
+        startStage: 'classes',
+        classPlanText
+      }));
+      syncRunIdToUrl(newRunId);
+      apiFileSyncService.subscribe(newRunId);
+    }
+    setFiles(prev => ({
+      ...prev,
+      'input/01_Locked_Class_Plan.txt': {
+        content: classPlanText,
+        version: 1,
+        dirty: false,
+        originalContent: classPlanText
+      }
+    }));
+    return data;
+  }, [workflow.runId, syncRunIdToUrl]);
+
+  const seedClassPrompts = useCallback(async (promptsOrCombined: { prompts?: any[]; combinedText?: string }) => {
+    const res = await fetch(`${API_URL}/runs/seed/class-prompts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: workflow.runId || undefined, ...promptsOrCombined })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Failed to seed class prompts (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    const newRunId = data.runId;
+    if (newRunId) {
+      setWorkflow(prev => ({
+        ...prev,
+        runId: newRunId,
+        startStage: 'classes'
+      }));
+      syncRunIdToUrl(newRunId);
+      apiFileSyncService.subscribe(newRunId);
+      fetch(`${API_URL}/runs/${newRunId}/classes`)
+        .then(r => r.ok ? r.json() : null)
+        .then(clsData => {
+          if (clsData && clsData.classes) {
+            setWorkflow(p => ({ ...p, classes: clsData.classes, outputs: { ...p.outputs, classes: clsData.classes } }));
+          }
+        })
+        .catch(() => {});
+    }
+    return data;
+  }, [workflow.runId, syncRunIdToUrl]);
+
+  const seedSchema = useCallback(async (schemaJson: any) => {
+    const res = await fetch(`${API_URL}/runs/seed/schema`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: workflow.runId || undefined, schemaJson })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Failed to seed schema (HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    const newRunId = data.runId;
+    const rawJson = typeof schemaJson === 'string' ? schemaJson : JSON.stringify(schemaJson, null, 2);
+    if (newRunId) {
+      setWorkflow(prev => ({
+        ...prev,
+        runId: newRunId,
+        startStage: 'schema_studio',
+        schema: {
+          rawJson,
+          root: typeof schemaJson === 'string' ? JSON.parse(schemaJson) : schemaJson,
+          classes: [],
+          version: 1,
+          generatedAt: new Date().toISOString()
+        } as any,
+        outputs: { ...prev.outputs, schema: rawJson }
+      }));
+      setEditedSchemaJson(rawJson);
+      syncRunIdToUrl(newRunId);
+      apiFileSyncService.subscribe(newRunId);
+    }
+    setFiles(prev => ({
+      ...prev,
+      'output/schema_output.json': {
+        content: rawJson,
+        version: 1,
+        dirty: false,
+        originalContent: rawJson
+      }
+    }));
+    return data;
+  }, [workflow.runId, syncRunIdToUrl]);
 
   // Requirement-Level Version History State
   const [requirementVersions, setRequirementVersions] = useState<Record<string, RequirementVersion[]>>({});
@@ -403,6 +868,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       derived?: Record<string, unknown>;
       caseDir?: string;
       runId?: string;
+      startStage?: string;
       error?: string;
     }) => {
       setWorkflow((prev) => {
@@ -418,6 +884,7 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         return {
           ...prev,
           runId: payload.runId ?? prev.runId,
+          startStage: payload.startStage ?? prev.startStage,
           caseDir: payload.caseDir ?? prev.caseDir,
           domain: (payload.derived?.domain as string) ?? prev.domain,
           byStage: nextByStage,
@@ -1380,9 +1847,44 @@ return (
         saveDraft,
         continueDraft,
         hydrate,
+
+        // Feature 1
+        files,
+        getFileContent,
+        updateFileContent,
+        saveFile,
+        fetchFile,
+        conflictInfo,
+        setConflictInfo,
+        dirtyFileNotice,
+        setDirtyFileNotice,
+        handleConflictKeepMine,
+        handleConflictTakeServer,
+        handleReloadDirtyNotice,
+        staleStages,
+        clearStaleStage,
+
+        // Feature 2
+        stageStatus,
+        refreshStageStatus,
+        seedRequirements,
+        seedClassPlan,
+        seedClassPrompts,
+        seedSchema,
       }}
     >
       {children}
+      <ConflictResolutionModal
+        conflict={conflictInfo}
+        onKeepMine={handleConflictKeepMine}
+        onTakeServer={handleConflictTakeServer}
+        onClose={() => setConflictInfo(null)}
+      />
+      <FileChangedToast
+        notice={dirtyFileNotice}
+        onReload={handleReloadDirtyNotice}
+        onKeepEditing={() => setDirtyFileNotice(null)}
+      />
     </WorkflowContext.Provider>
   );
 };

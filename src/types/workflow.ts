@@ -124,4 +124,7 @@ export interface SchemaGenerationWorkflow {
   outputs?: Record<string, unknown>;
   error?: string;
   completedStages?: string[];
+  startStage?: string;
+  lockedPlanText?: string;
+  classPlanText?: string;
 }
