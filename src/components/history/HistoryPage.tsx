@@ -38,7 +38,7 @@ interface HistoryManifest {
 }
 
 export const HistoryPage: React.FC = () => {
-  const { workflow, startNewSchema, loadHistoricalSchemaForEdit, continueDraft, setStage, saveDraft } = useWorkflow();
+  const { workflow, startNewSchema, loadHistoricalSchemaForEdit, continueDraft, setStage, saveDraft, hydrate, setActiveView } = useWorkflow();
   const [runs, setRuns] = useState<HistoryManifest[]>([]);
   const [errorsCount, setErrorsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,7 +116,8 @@ export const HistoryPage: React.FC = () => {
     e.stopPropagation();
     
     // Dirty check
-    if (workflow.runId && workflow.runId !== run.runId) {
+    const runId = (run as any).run_id || run.runId;
+    if (workflow.runId && workflow.runId !== runId) {
       const isDirty = !workflow.lastDraftSavedAt || (new Date(workflow.updatedAt || 0) > new Date(workflow.lastDraftSavedAt));
       if (isDirty) {
         if (confirm('Save current work as draft before switching?\n\nOK = Save & continue\nCancel = Discard & continue')) {
@@ -131,8 +132,31 @@ export const HistoryPage: React.FC = () => {
     }
     
     try {
-      await continueDraft(run.runId);
-      // setStage is called inside continueDraft
+      const res = await fetch(`${API_URL}/runs/${runId}`);
+      if (res.ok) {
+        const r = await res.json();
+        hydrate({
+          byStage: r.by_stage,
+          completed: r.completed,
+          derived: r.derived,
+          caseDir: r.case_dir,
+          runId,
+          error: r.error,
+        });
+        if (r.current_stage) {
+          setStage(r.current_stage);
+        }
+        setActiveView('generator');
+        await fetch(`${API_URL}/runs/${runId}/resume`, { method: 'POST' }).catch(() => {});
+        return;
+      }
+    } catch (err) {
+      console.warn('Direct run fetch failed, falling back to continueDraft', err);
+    }
+
+    try {
+      await continueDraft(runId);
+      setActiveView('generator');
     } catch (err: any) {
       alert(`Failed to continue draft: ${err.message}`);
     }

@@ -152,6 +152,15 @@ interface WorkflowContextValue {
   loadHistoricalSchemaForEdit: (historyDetail: any) => void;
 
   setRunStatus: (status: RunStatus) => void;
+
+  hydrate: (payload: {
+    byStage?: Record<string, { status: 'completed' | 'failed' | 'pending'; files: string[]; data: unknown }>;
+    completed?: string[];
+    derived?: Record<string, unknown>;
+    caseDir?: string;
+    runId?: string;
+    error?: string;
+  }) => void;
 }
 
 const initialWorkflow: SchemaGenerationWorkflow = {
@@ -386,6 +395,41 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const setRunStatus = useCallback((status: RunStatus) => {
     setWorkflow((prev) => ({ ...prev, runStatus: status, updatedAt: new Date().toISOString() }));
   }, []);
+
+  const hydrate = useCallback(
+    (payload: {
+      byStage?: Record<string, { status: 'completed' | 'failed' | 'pending'; files: string[]; data: unknown }>;
+      completed?: string[];
+      derived?: Record<string, unknown>;
+      caseDir?: string;
+      runId?: string;
+      error?: string;
+    }) => {
+      setWorkflow((prev) => {
+        const nextByStage = payload.byStage ?? prev.byStage ?? {};
+        const nextOutputs: Record<string, unknown> = { ...(prev.outputs ?? {}) };
+        if (payload.byStage) {
+          for (const [stg, info] of Object.entries(payload.byStage)) {
+            if (info.data !== null && info.data !== undefined) {
+              nextOutputs[stg] = info.data;
+            }
+          }
+        }
+        return {
+          ...prev,
+          runId: payload.runId ?? prev.runId,
+          caseDir: payload.caseDir ?? prev.caseDir,
+          domain: (payload.derived?.domain as string) ?? prev.domain,
+          byStage: nextByStage,
+          outputs: nextOutputs,
+          completedStages: payload.completed ?? prev.completedStages,
+          error: payload.error ?? prev.error,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+    },
+    []
+  );
 
   
   const updateWorkflowField = useCallback((field: keyof SchemaGenerationWorkflow, value: any) => {
@@ -1335,6 +1379,7 @@ return (
         loadHistoricalSchemaForEdit,
         saveDraft,
         continueDraft,
+        hydrate,
       }}
     >
       {children}
