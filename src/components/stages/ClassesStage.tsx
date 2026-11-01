@@ -829,6 +829,24 @@ export const ClassesStage: React.FC = () => {
     }
   };
 
+  const handleOpenReviewPlan = async () => {
+    if (!classPlanData) {
+      try {
+        const serverPlan = await handleFetchServerPlan();
+        if (!serverPlan && workflow.classPlanText) {
+          const fallback = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
+          setClassPlanData(fallback);
+        }
+      } catch (e) {
+        if (workflow.classPlanText) {
+          const fallback = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
+          setClassPlanData(fallback);
+        }
+      }
+    }
+    openClassPlanModal();
+  };
+
   const pasteOptions: PasteOption[] = [
     {
       id: 'class-plan',
@@ -873,14 +891,26 @@ export const ClassesStage: React.FC = () => {
             </button>
           }
           rightActions={
-            <button
-              type="button"
-              onClick={() => setIsPasteModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold rounded-lg text-xs transition-colors cursor-pointer shadow-xs"
-            >
-              <Clipboard className="h-3.5 w-3.5" />
-              <span>Paste existing</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {workflow.classPlanStatus === 'PENDING_APPROVAL' && (
+                <button
+                  type="button"
+                  onClick={handleOpenReviewPlan}
+                  className="flex items-center space-x-1 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Review class plan</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsPasteModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-semibold rounded-lg text-xs transition-colors cursor-pointer shadow-xs"
+              >
+                <Clipboard className="h-3.5 w-3.5" />
+                <span>Paste existing</span>
+              </button>
+            </div>
           }
         />
         <div className="flex-1 p-12 text-center text-neutral-600 dark:text-neutral-400">
@@ -918,6 +948,16 @@ export const ClassesStage: React.FC = () => {
                 >
                   Paste Existing
                 </button>
+                {workflow.classPlanStatus === 'PENDING_APPROVAL' && (
+                  <button
+                    type="button"
+                    onClick={handleOpenReviewPlan}
+                    className="flex items-center space-x-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Review class plan</span>
+                  </button>
+                )}
                 <button
                   onClick={() => generateClasses && generateClasses()}
                   disabled={!isClassesReady}
@@ -1061,6 +1101,17 @@ export const ClassesStage: React.FC = () => {
         }
         rightActions={
           <>
+            {workflow.classPlanStatus === 'PENDING_APPROVAL' && (
+              <button
+                type="button"
+                onClick={handleOpenReviewPlan}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer mr-2"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Review class plan</span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsInputsModalOpen(true)}
               className="flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer mr-2"

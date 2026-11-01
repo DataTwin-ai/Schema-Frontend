@@ -25,6 +25,7 @@ import {
   renderLockedPlan, 
   validateClassPlanRows 
 } from '../../utils/classPlanUtils';
+import { useWorkflow } from '../../context/WorkflowContext';
 
 export type { ClassPlanData };
 
@@ -54,6 +55,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
   onReject,
   onFetchServerPlan,
 }) => {
+  const { showToast } = useWorkflow();
   const [viewMode, setViewMode] = useState<'table' | 'raw'>('table');
   const [classes, setClasses] = useState<ClassPlanRow[]>([]);
   const [rawText, setRawText] = useState<string>('');
@@ -293,7 +295,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
       setVersion(regenerated.version);
       setSource('generated');
     } catch (err: any) {
-      alert(err.message || 'Failed to regenerate class plan');
+      showToast(err.message || 'Failed to regenerate class plan', 'error');
     } finally {
       setActionLoading(null);
     }
@@ -307,7 +309,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
       await onReject();
       onClose();
     } catch (err: any) {
-      alert(err.message || 'Failed to reject class plan');
+      showToast(err.message || 'Failed to reject class plan', 'error');
     } finally {
       setActionLoading(null);
     }
@@ -339,7 +341,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
         setServerErrors({});
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to fetch server plan');
+      showToast(err.message || 'Failed to fetch server plan', 'error');
     }
   };
 
@@ -600,6 +602,22 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
                 <span>Exact locked class plan text representation:</span>
                 <span className="font-mono text-[10px]">Format: N. ClassName: ... | Datasource: ... | Trigger: ...</span>
               </div>
+              {hasErrors && (
+                <div className="p-2.5 rounded-lg bg-rose-50/50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-[11px] text-rose-600 dark:text-rose-400 space-y-1">
+                  <div className="font-semibold flex items-center space-x-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span>Plan has validation errors ({Object.keys(mergedErrorsByLine).length}):</span>
+                  </div>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {Object.entries(mergedErrorsByLine).slice(0, 5).map(([line, errs]) => (
+                      <li key={line}>Line {line}: {errs.join(', ')}</li>
+                    ))}
+                    {Object.keys(mergedErrorsByLine).length > 5 && (
+                      <li>...and {Object.keys(mergedErrorsByLine).length - 5} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
               <textarea
                 value={rawText}
                 onChange={(e) => {
