@@ -40,7 +40,7 @@ import { PasteExistingModal, PasteOption } from '../common/PasteExistingModal';
 import { ClassPlanApprovalModal } from '../common/ClassPlanApprovalModal';
 import { apiClassPlanService, classService } from '../../services';
 import { normalizeClassPlanData, ClassPlanData, DEFAULT_DATASOURCES } from '../../utils/classPlanUtils';
-import { pollOperation } from '../../services/api/pollOperation';
+import { pollOperation, StoppedError, UnknownStatusError } from '../../services/api/pollOperation';
 
 interface ClassRowProps {
   item: SchemaClass;
@@ -615,9 +615,11 @@ export const ClassesStage: React.FC = () => {
     refreshStageStatus,
     setWorkflow,
     activeOperation,
+    setActiveOperation,
     setIsGeneratingModalOpen,
     setGenerationOperationLabel,
     isClassPlanModalOpen,
+    setIsClassPlanModalOpen,
     closeClassPlanModal,
     openClassPlanModal,
     classPlanData,
@@ -709,20 +711,56 @@ export const ClassesStage: React.FC = () => {
       setGenerationOperationLabel('Generating Domain Classes...');
 
       const opId = response.operationId || activeOperation?.operationId;
+      if (opId) {
+        setActiveOperation({
+          operationId: opId,
+          type: 'generate-classes',
+          status: 'RUNNING',
+          message: 'Generating Domain Classes...',
+        });
+      }
+
       let statusData: any = null;
       if (opId) {
-        statusData = await pollOperation(opId, (step) => {
-          setWorkflow((prev: SchemaGenerationWorkflow) => {
-            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
-            const newSteps = [...prev.currentProgressSteps];
-            if (existingIdx >= 0) {
-              newSteps[existingIdx] = step;
-            } else {
-              newSteps.push(step);
-            }
-            return { ...prev, currentProgressSteps: newSteps };
-          });
-        });
+        statusData = await pollOperation(
+          opId,
+          (step) => {
+            setWorkflow((prev: SchemaGenerationWorkflow) => {
+              const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
+              const newSteps = [...prev.currentProgressSteps];
+              if (existingIdx >= 0) {
+                newSteps[existingIdx] = step;
+              } else {
+                newSteps.push(step);
+              }
+              return { ...prev, currentProgressSteps: newSteps };
+            });
+          },
+          (data) => {
+            setActiveOperation((prev: any) => ({
+              ...prev,
+              ...data,
+              operationId: data.operationId || opId,
+            }));
+          }
+        );
+      }
+
+      if (statusData?.status === 'AWAITING_APPROVAL') {
+        setIsGeneratingModalOpen(false);
+        const plan = statusData.plan || statusData.result?.plan;
+        const normalized = normalizeClassPlanData(plan, 'generated');
+        setClassPlanData(normalized);
+        setIsClassPlanModalOpen(true);
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          classPlanStatus: 'PENDING_APPROVAL',
+          generationStatus: 'idle',
+          classPlanText: normalized.text,
+          classPlanVersion: normalized.version,
+          classPlanSource: normalized.source,
+        }));
+        return;
       }
 
       // Load class prompts into existing cards
@@ -744,6 +782,8 @@ export const ClassesStage: React.FC = () => {
       }
 
       const mapped = (classService as any).mapClasses ? (classService as any).mapClasses(rawClasses) : rawClasses;
+      const count = statusData?.count ?? statusData?.result?.count ?? mapped.length;
+
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         classes: mapped,
@@ -752,18 +792,29 @@ export const ClassesStage: React.FC = () => {
         classPlanStatus: 'APPROVED',
         updatedAt: new Date().toISOString(),
       }));
-      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+      setIsGeneratingModalOpen(false);
+      showToast(`Generated ${count} classes successfully`, 'success');
     } catch (err: any) {
       setIsGeneratingModalOpen(false);
-      showToast(err.message || 'Approval failed', 'error');
-      if (err.mismatches || err.status === 'FAILED') {
-        setWorkflow((prev) => ({
-          ...prev,
-          generationStatus: 'error',
-          lastError: 'planMismatch',
-          mismatches: err.mismatches || [err.message],
-          outputs: { ...(prev.outputs || {}), mismatches: err.mismatches || [err.message] }
-        }));
+      if (err.name === 'StoppedError') {
+        showToast("Generation stopped", 'info');
+        setActiveOperation(null);
+      } else if (err.name === 'UnknownStatusError') {
+        showToast(`Unknown operation status: ${err.rawStatus || err.message}`, 'error');
+        setActiveOperation(null);
+      } else {
+        showToast(err.message || 'Approval failed', 'error');
+        if (err.mismatches || err.status === 'FAILED') {
+          setWorkflow((prev) => ({
+            ...prev,
+            generationStatus: 'error',
+            runStatus: 'FAILED',
+            lastError: err.mismatches ? 'planMismatch' : err.message,
+            mismatches: err.mismatches || [err.message],
+            outputs: { ...(prev.outputs || {}), mismatches: err.mismatches || [err.message] }
+          }));
+          setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message, mismatches: err.mismatches } : null);
+        }
       }
       throw err;
     }
@@ -943,14 +994,26 @@ export const ClassesStage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs">No domain classes generated yet.</p>
-              {workflow.generationStatus === 'error' && (workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)) && (
+              <p className="text-xs">
+                {(workflow.generationStatus === 'completed' || workflow.runStatus === 'COMPLETED' || workflow.classPlanStatus === 'APPROVED')
+                  ? 'Generation finished but no class files were found'
+                  : 'No domain classes generated yet.'}
+              </p>
+              {workflow.generationStatus === 'error' && (
                 <div className="max-w-xl mx-auto mb-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800/30 rounded-lg p-4 text-left">
                   <div className="flex items-start space-x-3">
                     <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Plan Mismatch</h4>
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">The generated classes did not match the locked class plan.</p>
+                      <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
+                        {workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)
+                          ? 'Plan Mismatch'
+                          : 'Generation Failed'}
+                      </h4>
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">
+                        {workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)
+                          ? 'The generated classes did not match the locked class plan.'
+                          : (workflow.lastError || 'An error occurred during generation.')}
+                      </p>
                       {workflow.mismatches && workflow.mismatches.length > 0 && (
                         <div className="mb-3 space-y-1">
                           <ul className="list-disc pl-4 space-y-0.5 text-[11px] font-mono text-rose-600 dark:text-rose-400">
@@ -1290,13 +1353,21 @@ export const ClassesStage: React.FC = () => {
           </div>
         )}
 
-        {workflow.generationStatus === 'error' && (workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)) && (
+        {workflow.generationStatus === 'error' && (
           <div className="mb-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800/30 rounded-lg p-4">
             <div className="flex items-start space-x-3">
               <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Plan Mismatch</h4>
-                <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">The generated classes did not match the locked class plan.</p>
+                <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">
+                  {workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)
+                    ? 'Plan Mismatch'
+                    : 'Generation Failed'}
+                </h4>
+                <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">
+                  {workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)
+                    ? 'The generated classes did not match the locked class plan.'
+                    : (workflow.lastError || 'An error occurred during generation.')}
+                </p>
                 {workflow.mismatches && workflow.mismatches.length > 0 ? (
                   <div className="mb-3 space-y-1">
                     <ul className="list-disc pl-4 space-y-0.5 text-[11px] font-mono text-rose-600 dark:text-rose-400">

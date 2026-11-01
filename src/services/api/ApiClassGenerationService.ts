@@ -12,7 +12,8 @@ export class ApiClassGenerationService implements IClassGenerationService {
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void,
     additionalRequirements?: string[],
-    additionalInformation?: any[]
+    additionalInformation?: any[],
+    onStatusUpdate?: (statusData: any) => void
   ): Promise<SchemaClass[]> {
     if (onProgress) {
       onProgress({ id: 'class-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate classes request' });
@@ -45,10 +46,10 @@ export class ApiClassGenerationService implements IClassGenerationService {
       const operationId: string = initData.operationId;
       if (onOperationStarted) onOperationStarted(operationId);
 
-      const statusData = await pollOperation(operationId, onProgress);
+      const statusData = await pollOperation(operationId, onProgress, onStatusUpdate);
 
       if (statusData.status === 'AWAITING_APPROVAL') {
-        const plan = statusData.plan || statusData.result?.plan;
+        const plan = statusData.plan || statusData.result?.plan || statusData.result;
         return {
           awaitingApproval: true,
           operationId,
@@ -78,7 +79,9 @@ export class ApiClassGenerationService implements IClassGenerationService {
         onProgress({ id: 'class-done', status: 'done', label: 'Classes generated successfully' });
       }
 
-      return this.mapClasses(rawClasses);
+      const mapped = this.mapClasses(rawClasses);
+      (mapped as any).count = statusData.count ?? statusData.result?.count ?? mapped.length;
+      return mapped;
     }
 
     // Fallback: direct response or fetch class-prompts
@@ -98,7 +101,10 @@ export class ApiClassGenerationService implements IClassGenerationService {
     if (onProgress) {
       onProgress({ id: 'class-done', status: 'done', label: 'Classes generated successfully' });
     }
-    return this.mapClasses(rawClasses);
+
+    const mapped = this.mapClasses(rawClasses);
+    (mapped as any).count = initData.count ?? initData.result?.count ?? mapped.length;
+    return mapped;
   }
 
   public mapClasses(rawClasses: any[]): SchemaClass[] {

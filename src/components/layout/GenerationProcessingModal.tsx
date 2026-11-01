@@ -5,7 +5,6 @@ import { useWorkflow } from '../../context/WorkflowContext';
 import { Loader2, Pause, Play, Square, XCircle, AlertCircle, CheckCircle } from 'lucide-react';
 import { API_URL } from '../../services/api/config';
 
-
 export interface GenerationProcessingModalProps {
   isOpen?: boolean;
   operationLabel?: string;
@@ -16,35 +15,25 @@ export interface GenerationProcessingModalProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function extractPct(rawProgress: unknown): number {
+/**
+ * Server-provided percentage only. Never compute percentage on the client from current/total.
+ * Clamps to 99% maximum while running; 100% is only shown on COMPLETED.
+ */
+function extractServerPct(rawProgress: unknown, activeOp?: any): number {
   if (typeof rawProgress === 'number') {
-    return Math.round(Math.min(100, Math.max(0, rawProgress)));
+    return Math.round(Math.min(99, Math.max(0, rawProgress)));
   }
   if (rawProgress && typeof rawProgress === 'object') {
     const p = rawProgress as Record<string, unknown>;
-    
-    // 1. Explicit percentage (if > 0)
-    if (typeof p.percentage === 'number' && p.percentage > 0) {
-      return Math.round(Math.min(100, Math.max(0, p.percentage)));
-    }
-    
-    // 2. Current / Total items
-    if (typeof p.current === 'number' && typeof p.total === 'number' && (p.total as number) > 0) {
-      return Math.round(Math.min(100, Math.max(0, ((p.current as number) / (p.total as number)) * 100)));
-    }
-    
-    // 3. Step / TotalSteps (Pipeline level)
-    if (typeof p.step === 'number' && typeof p.totalSteps === 'number' && (p.totalSteps as number) > 0) {
-      const basePct = ((p.step as number) / (p.totalSteps as number)) * 100;
-      // Subtract a little bit so it doesn't look instantly complete for the current step, 
-      // but ensure it never goes below 0.
-      return Math.round(Math.min(100, Math.max(0, basePct - (100 / (p.totalSteps as number) * 0.5))));
-    }
-    
-    // 4. If percentage was exactly 0 and no steps were provided
     if (typeof p.percentage === 'number') {
-      return 0;
+      return Math.round(Math.min(99, Math.max(0, p.percentage)));
     }
+    if (typeof p.percent === 'number') {
+      return Math.round(Math.min(99, Math.max(0, p.percent)));
+    }
+  }
+  if (activeOp && typeof activeOp.percentage === 'number') {
+    return Math.round(Math.min(99, Math.max(0, activeOp.percentage)));
   }
   return 0;
 }
@@ -56,61 +45,36 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-/** Build a human-readable step label from the progress object.
- *  Handles: step/totalSteps (pipeline-level), phaseLabel, current/total, currentName. */
-function buildStepLabel(rawProgress: unknown): string | null {
-  if (!rawProgress || typeof rawProgress !== 'object') return null;
-  const p = rawProgress as Record<string, unknown>;
+/**
+ * Build human-readable phase text and "current of total" step count.
+ * Example: "Generating class prompts \u00B7 6 of 6"
+ */
+function buildPhaseAndCount(rawProgress: unknown, activeOp?: any): string | null {
+  const p = (rawProgress && typeof rawProgress === 'object') ? (rawProgress as Record<string, unknown>) : {};
+
+  const phase: string | null =
+    (activeOp && typeof activeOp.phase === 'string' && activeOp.phase) ? activeOp.phase :
+    (typeof p.phase === 'string' && p.phase) ? p.phase :
+    (typeof p.phaseLabel === 'string' && p.phaseLabel) ? p.phaseLabel :
+    (typeof p.phase_label === 'string' && p.phase_label) ? p.phase_label :
+    (activeOp && typeof activeOp.message === 'string' && activeOp.message) ? activeOp.message :
+    (typeof p.message === 'string' && p.message) ? p.message :
+    null;
 
   const current = typeof p.current === 'number' ? p.current : undefined;
   const total   = typeof p.total   === 'number' ? p.total   : undefined;
-
-  const phaseLabel: string | null =
-    typeof p.phaseLabel   === 'string' ? p.phaseLabel   :
-    typeof p.phase_label  === 'string' ? p.phase_label  :
-    typeof p.message      === 'string' ? p.message      :
-    null;
-
-  const currentName: string | null =
-    typeof p.currentName  === 'string' ? p.currentName  :
-    typeof p.current_name === 'string' ? p.current_name :
-    null;
-
-  const step       = typeof p.step       === 'number' ? p.step       : undefined;
-  const totalSteps = typeof p.totalSteps === 'number' ? p.totalSteps : undefined;
-
-  const parts: string[] = [];
-
-  if (step !== undefined && totalSteps !== undefined) {
-    let stepPart = `Step ${step} of ${totalSteps}`;
-    if (phaseLabel) stepPart += ` · ${phaseLabel}`;
-    parts.push(stepPart);
-  } else if (phaseLabel) {
-    parts.push(phaseLabel);
-  }
-
+  let countStr: string | null = null;
   if (current !== undefined && total !== undefined && (total as number) > 0) {
-    const itemLabel = currentName
-      ? `${current} of ${total}: ${currentName}`
-      : `${current} of ${total}`;
-    if (parts.length === 0) {
-      parts.push(itemLabel);
-    } else {
-      parts[0] += ` (${itemLabel})`;
-    }
+    const currentName = typeof p.currentName === 'string' ? p.currentName : typeof p.current_name === 'string' ? p.current_name : null;
+    countStr = currentName ? `${current} of ${total}: ${currentName}` : `${current} of ${total}`;
   }
 
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-/** Build ETA sub-line from progress object. */
-function buildEtaLine(rawProgress: unknown): string | null {
-  if (!rawProgress || typeof rawProgress !== 'object') return null;
-  const p = rawProgress as Record<string, unknown>;
-  if (typeof p.etaSeconds !== 'number') return null;
-  let line = `About ${formatDuration(p.etaSeconds as number)} left`;
-  if (p.estimated === true) line += ' (estimated)';
-  return line;
+  if (phase && countStr) {
+    return `${phase} \u00B7 ${countStr}`;
+  }
+  if (phase) return phase;
+  if (countStr) return countStr;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,75 +97,63 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
 
   const isOpen = propIsOpen !== undefined ? propIsOpen : isGeneratingModalOpen;
 
-  // Elapsed timer — ticks every second while modal is visible
+  // Elapsed timer & stall guard
   const [elapsedSecs, setElapsedSecs] = useState(0);
-  const elapsedRef  = useRef(0);
-  const timerRef    = useRef<NodeJS.Timeout | null>(null);
+  const elapsedRef = useRef(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [isStalled, setIsStalled] = useState(false);
+  const isStalledRef = useRef(false);
+  const lastUpdatedAtRef = useRef<string | null>(null);
+  const lastProgressTimeRef = useRef<number>(Date.now());
 
   // Never let the displayed percentage go backwards
   const maxPctRef = useRef(0);
 
-  // Reset and start the elapsed counter when modal opens
+  const currentUpdatedAt = (activeOperation as any)?.updatedAt || (activeOperation as any)?.updated_at || null;
+
+  // Reset and start elapsed & stall timers when modal opens
   useEffect(() => {
     if (isOpen) {
       elapsedRef.current = 0;
       maxPctRef.current  = 0;
       setElapsedSecs(0);
+      lastProgressTimeRef.current = Date.now();
+      lastUpdatedAtRef.current = currentUpdatedAt;
+      setIsStalled(false);
+      isStalledRef.current = false;
+
       timerRef.current = setInterval(() => {
         elapsedRef.current += 1;
         setElapsedSecs(elapsedRef.current);
+
+        // Stall guard: check if updatedAt hasn't changed for 120 s
+        const now = Date.now();
+        if (!isStalledRef.current && (now - lastProgressTimeRef.current >= 120 * 1000)) {
+          setIsStalled(true);
+          isStalledRef.current = true;
+        }
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
+      setIsStalled(false);
+      isStalledRef.current = false;
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isOpen]);
 
-  // Polling for backend operation status — every 1 s for smooth bar movement
+  // When server sends a new updatedAt timestamp, reset the stall timer
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-
-    const pollStatus = async () => {
-      if (!activeOperation?.operationId) return;
-      if (['COMPLETED', 'FAILED', 'STOPPED'].includes(activeOperation.status)) return;
-
-      try {
-        const res = await fetch(`${API_URL}/operations/${activeOperation.operationId}/status`);
-        if (res.ok) {
-          const data = await res.json();
-          setActiveOperation(data);
-
-          if (data.status === 'COMPLETED') {
-            // Show 100 % bar briefly, then close
-            setTimeout(() => {
-              setActiveOperation(null);
-              closeGeneratingModal();
-            }, 500);
-            return; // No further polling
-          }
-
-          if (data.status === 'STOPPED') {
-            setActiveOperation(null);
-            closeGeneratingModal();
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('Failed to poll operation status:', err);
-      }
-
-      timeoutId = setTimeout(pollStatus, 1000); // 1 s interval
-    };
-
-    if (isOpen && activeOperation) {
-      timeoutId = setTimeout(pollStatus, 1000);
+    if (currentUpdatedAt && currentUpdatedAt !== lastUpdatedAtRef.current) {
+      lastUpdatedAtRef.current = currentUpdatedAt;
+      lastProgressTimeRef.current = Date.now();
+      setIsStalled(false);
+      isStalledRef.current = false;
     }
-
-    return () => clearTimeout(timeoutId);
-  }, [isOpen, activeOperation, setActiveOperation, closeGeneratingModal]);
+  }, [currentUpdatedAt]);
 
   if (!isOpen) return null;
 
@@ -210,24 +162,23 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   // ---------------------------------------------------------------------------
 
   const currentStatus = activeOperation?.status || 'RUNNING';
-  const isRunningLike  = ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'RESUME_REQUESTED'].includes(currentStatus);
+  const isRunningLike = ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'RESUME_REQUESTED'].includes(currentStatus);
   const isStopRequested = currentStatus === 'STOP_REQUESTED';
-  const isCompleted     = currentStatus === 'COMPLETED';
+  const isCompleted = currentStatus === 'COMPLETED';
   const showProgressBar = isRunningLike || isStopRequested || isCompleted;
 
   const rawProgress = activeOperation?.progress;
-  const rawPct = extractPct(rawProgress);
-  // Ratchet: clamp to max seen so the bar never retreats
-  maxPctRef.current = Math.max(maxPctRef.current, rawPct);
+  const rawPct = extractServerPct(rawProgress, activeOperation);
+  // Ratchet: clamp to max seen so the bar never retreats, but clamp to 99 while not completed
+  maxPctRef.current = Math.min(99, Math.max(maxPctRef.current, rawPct));
   const pct = isCompleted ? 100 : maxPctRef.current;
 
-  const stepLabel = buildStepLabel(rawProgress);
-  const etaLine   = buildEtaLine(rawProgress);
+  const stepLabel = buildPhaseAndCount(rawProgress, activeOperation);
 
   // STOP hint appears after 2 min of waiting
   const showStopHint = isStopRequested && elapsedSecs >= 120;
 
-  // Operation title — never pass objects; use strings only
+  // Operation title
   const resolveOperationLabel = (): string => {
     if (propOperationLabel) return propOperationLabel;
     if (generationOperationLabel && generationOperationLabel !== 'Generating\u2026') {
@@ -289,7 +240,6 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   };
 
   const renderButtons = () => {
-    // All buttons are disabled while STOP is being processed
     const disabled = isStopRequested;
 
     switch (currentStatus) {
@@ -300,7 +250,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
               <button
                 onClick={() => handleAction('pause')}
                 disabled={disabled}
-                className="flex-1 flex justify-center items-center py-2 px-3 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 flex justify-center items-center py-2 px-3 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Pause className="w-3.5 h-3.5 mr-1.5" />
                 Pause
@@ -309,7 +259,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
             <button
               onClick={() => handleAction('stop')}
               disabled={disabled}
-              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 mr-1.5" />
               Stop
@@ -326,7 +276,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
             </button>
             <button
               onClick={() => handleAction('stop')}
-              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors"
+              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 mr-1.5" />
               Stop
@@ -339,14 +289,14 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
           <>
             <button
               onClick={() => handleAction('resume')}
-              className="flex-1 flex justify-center items-center py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors"
+              className="flex-1 flex justify-center items-center py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 mr-1.5" />
               Resume
             </button>
             <button
               onClick={() => handleAction('stop')}
-              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors"
+              className="flex-1 flex justify-center items-center py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 mr-1.5" />
               Stop
@@ -374,7 +324,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
         return (
           <button
             onClick={() => { setActiveOperation(null); closeGeneratingModal(); }}
-            className="w-full flex justify-center items-center py-2 px-3 bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg text-xs font-semibold transition-colors"
+            className="w-full flex justify-center items-center py-2 px-3 bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
           >
             <XCircle className="w-3.5 h-3.5 mr-1.5" />
             Close
@@ -385,7 +335,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
         return (
           <button
             onClick={() => { setActiveOperation(null); closeGeneratingModal(); }}
-            className="w-full flex justify-center items-center py-2 px-3 bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg text-xs font-semibold transition-colors"
+            className="w-full flex justify-center items-center py-2 px-3 bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-900 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
           >
             Acknowledge Error
           </button>
@@ -429,7 +379,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
           </p>
         )}
 
-        {/* Progress bar + step info — visible while running or completing */}
+        {/* Progress bar + step info */}
         {showProgressBar && !activeOperation?.error && (
           <div className="mt-4 text-left">
             {/* Bar row */}
@@ -449,28 +399,54 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
               </span>
             </div>
 
-            {/* Step label */}
+            {/* Step label: phase and count */}
             {stepLabel && (
               <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-400 leading-snug">
                 {stepLabel}
               </p>
             )}
 
-            {/* Elapsed · ETA */}
-            {/* Removed at user request */}
+            {/* Stall notice */}
+            {isStalled && (
+              <div className="mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-left">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                  No progress from server
+                </p>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      lastProgressTimeRef.current = Date.now();
+                      isStalledRef.current = false;
+                      setIsStalled(false);
+                    }}
+                    className="flex-1 py-1.5 px-3 text-xs font-semibold bg-white dark:bg-neutral-800 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 rounded-md hover:bg-amber-50 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                  >
+                    Keep waiting
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAction('stop')}
+                    className="flex-1 py-1.5 px-3 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-md transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Stop-requested status */}
             {isStopRequested && (
               <p className="mt-2 text-xs text-rose-500 dark:text-rose-400 leading-snug">
                 {showStopHint
                   ? 'Still waiting for the AI response \u2014 this can take up to a few minutes.'
-                  : `Waiting for the current AI call to finish\u2026`}
+                  : 'Waiting for the current AI call to finish\u2026'}
               </p>
             )}
           </div>
         )}
 
-        {/* Supporting text fallback — only when bar is not shown */}
+        {/* Supporting text fallback */}
         {!showProgressBar && !activeOperation?.error && supportingText && (
           <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 leading-relaxed">
             {supportingText}

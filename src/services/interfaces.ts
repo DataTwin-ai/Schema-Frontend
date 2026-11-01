@@ -24,20 +24,37 @@ export interface IRequirementsGenerationService {
     highLevelInput: string,
     supportingDocs: SupportingDocument[],
     onProgress?: ProgressCallback,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    onStatusUpdate?: (statusData: any) => void
   ): Promise<{ resultText: string; runId: string; caseDir?: string }>;
 
-  generateRequirements(input: BusinessInput, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<RequirementsModel>;
+  generateRequirements(input: BusinessInput, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, onStatusUpdate?: (statusData: any) => void): Promise<RequirementsModel>;
 
   getCaseFiles?(runId: string): Promise<Array<{ name: string; content: string }>>;
 }
 
 export interface IClassGenerationService {
-  generateClasses(requirements: RequirementsModel, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[], additionalInformation?: any[]): Promise<SchemaClass[]>;
+  generateClasses(
+    requirements: RequirementsModel,
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void,
+    additionalRequirements?: string[],
+    additionalInformation?: any[],
+    onStatusUpdate?: (statusData: any) => void
+  ): Promise<SchemaClass[]>;
 }
 
 export interface ISchemaGenerationService {
-  generateSchema(requirements: RequirementsModel, classes: SchemaClass[], runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void, additionalRequirements?: string[]): Promise<SchemaModel>;
+  generateSchema(
+    requirements: RequirementsModel,
+    classes: SchemaClass[],
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void,
+    additionalRequirements?: string[],
+    onStatusUpdate?: (statusData: any) => void
+  ): Promise<SchemaModel>;
 }
 
 export interface IAssistantService {
@@ -90,5 +107,3 @@ export interface ISchemaHistoryService {
   getVersion(runId: string, n: number): Promise<any>;
   restoreVersion(runId: string, n: number, userName: string): Promise<any>;
 }
-
-

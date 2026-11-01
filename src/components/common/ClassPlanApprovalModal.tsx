@@ -390,7 +390,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
               </span>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-              {classes.length} classes planned • Approve to generate exact domain specifications
+              {classes.length} classes planned \u2022 Approve to generate exact domain specifications
             </p>
           </div>
 
@@ -585,7 +585,7 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
                               <td colSpan={5} className="py-1 px-3 pl-12 text-[11px] text-rose-600 dark:text-rose-400 font-medium">
                                 <div className="flex items-center space-x-1.5">
                                   <AlertCircle className="h-3 w-3 shrink-0" />
-                                  <span>{rowErrors.join(' • ')}</span>
+                                  <span>{rowErrors.join(' \u2022 ')}</span>
                                 </div>
                               </td>
                             </tr>
@@ -708,3 +708,5 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
     </div>
   );
 };
+
+export { ClassPlanApprovalModal as ClassPlanReviewModal };

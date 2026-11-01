@@ -23,7 +23,7 @@ export const StaleStageBanner: React.FC<StaleStageBannerProps> = ({
         <div className="text-xs">
           <span className="font-semibold">{stageName ? `Inputs for ${stageName} have changed. ` : 'Inputs have changed. '}</span>
           <span className="text-amber-800 dark:text-amber-300">
-            {reason || 'This stage’s data may be stale and should be regenerated.'}
+            {reason || "This stage's data may be stale and should be regenerated."}
           </span>
         </div>
       </div>

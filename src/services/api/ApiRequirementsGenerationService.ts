@@ -10,7 +10,8 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     highLevelInput: string,
     supportingDocs: SupportingDocument[],
     onProgress?: ProgressCallback,
-    onOperationStarted?: (operationId: string) => void
+    onOperationStarted?: (operationId: string) => void,
+    onStatusUpdate?: (statusData: any) => void
   ): Promise<{ resultText: string; runId: string; caseDir?: string }> {
     if (onProgress) {
       onProgress({
@@ -68,7 +69,7 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
             onOperationStarted(operationId);
           }
           
-          const statusData = await pollOperation(operationId, onProgress);
+          const statusData = await pollOperation(operationId, onProgress, onStatusUpdate);
           
           resultText = statusData.generatedBusinessRequirement || statusData.resultText || '';
           if (!resultText || resultText.trim() === '') {
@@ -96,7 +97,6 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
         });
       }
 
-
       return { resultText, runId, caseDir };
     } catch (error: any) {
       if (onProgress) {
@@ -111,7 +111,13 @@ export class ApiRequirementsGenerationService implements IRequirementsGeneration
     }
   }
 
-  async generateRequirements(input: BusinessInput, runId?: string, onProgress?: ProgressCallback, onOperationStarted?: (operationId: string) => void): Promise<RequirementsModel> {
+  async generateRequirements(
+    input: BusinessInput,
+    runId?: string,
+    onProgress?: ProgressCallback,
+    onOperationStarted?: (operationId: string) => void,
+    onStatusUpdate?: (statusData: any) => void
+  ): Promise<RequirementsModel> {
     if (!runId) throw new Error("runId is required to fetch requirements");
     
     if (onProgress) {

@@ -12,7 +12,8 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     runId?: string,
     onProgress?: ProgressCallback,
     onOperationStarted?: (operationId: string) => void,
-    additionalRequirements?: string[]
+    additionalRequirements?: string[],
+    onStatusUpdate?: (statusData: any) => void
   ): Promise<SchemaModel> {
     if (onProgress) {
       onProgress({ id: 'schema-init', status: 'active', label: 'Connecting to backend...', detail: 'Sending generate schema request' });
@@ -38,7 +39,7 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
       const operationId: string = initData.operationId;
       if (onOperationStarted) onOperationStarted(operationId);
 
-      const statusData = await pollOperation(operationId, onProgress);
+      const statusData = await pollOperation(operationId, onProgress, onStatusUpdate);
 
       if (runId) {
         try {
@@ -226,4 +227,3 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
     } as SchemaModel;
   }
 }
-
