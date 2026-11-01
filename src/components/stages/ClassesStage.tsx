@@ -580,6 +580,20 @@ const ClassRow: React.FC<ClassRowProps> = ({
   );
 };
 
+const formatMismatch = (m: any): string => {
+  if (typeof m === 'string') return m;
+  const num = m.classNumber || m.class_no || m.class_number || m.line;
+  const expected = m.expected || m.expectedClass || m.expected_class;
+  const got = m.got || m.actual || m.actualClass || m.actual_class;
+  if (num && expected && got) {
+    return `Class ${num} expected ${expected}, got ${got}`;
+  }
+  if (num && expected) {
+    return `Class ${num} expected ${expected}`;
+  }
+  return typeof m === 'object' ? JSON.stringify(m) : String(m);
+};
+
 export const ClassesStage: React.FC = () => {
   const { 
     workflow, 
@@ -747,6 +761,7 @@ export const ClassesStage: React.FC = () => {
           ...prev,
           generationStatus: 'error',
           lastError: 'planMismatch',
+          mismatches: err.mismatches || [err.message],
           outputs: { ...(prev.outputs || {}), mismatches: err.mismatches || [err.message] }
         }));
       }
@@ -930,6 +945,33 @@ export const ClassesStage: React.FC = () => {
           ) : (
             <div className="space-y-3">
               <p className="text-xs">No domain classes generated yet.</p>
+              {workflow.generationStatus === 'error' && (workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)) && (
+                <div className="max-w-xl mx-auto mb-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800/30 rounded-lg p-4 text-left">
+                  <div className="flex items-start space-x-3">
+                    <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Plan Mismatch</h4>
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">The generated classes did not match the locked class plan.</p>
+                      {workflow.mismatches && workflow.mismatches.length > 0 && (
+                        <div className="mb-3 space-y-1">
+                          <ul className="list-disc pl-4 space-y-0.5 text-[11px] font-mono text-rose-600 dark:text-rose-400">
+                            {workflow.mismatches.map((m: any, idx: number) => (
+                              <li key={idx}>{formatMismatch(m)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => generateClasses && generateClasses()}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        Retry generation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {!isClassesReady && (
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">
                   Missing inputs: {missingInputs}. Please complete previous stages or paste existing data.
@@ -1249,29 +1291,43 @@ export const ClassesStage: React.FC = () => {
           </div>
         )}
 
-        {workflow.generationStatus === 'error' && workflow.lastError?.includes('planMismatch') && (
+        {workflow.generationStatus === 'error' && (workflow.lastError?.includes('planMismatch') || (workflow.mismatches && workflow.mismatches.length > 0)) && (
           <div className="mb-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-200 dark:border-rose-800/30 rounded-lg p-4">
             <div className="flex items-start space-x-3">
               <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Plan Mismatch</h4>
                 <p className="text-[11px] text-rose-600 dark:text-rose-400/80 mb-3">The generated classes did not match the locked class plan.</p>
-                <div className="grid grid-cols-2 gap-4 text-[10px] font-mono mb-3">
-                   <div>
-                     <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Planned classes</div>
-                     <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
+                {workflow.mismatches && workflow.mismatches.length > 0 ? (
+                  <div className="mb-3 space-y-1">
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] font-mono text-rose-600 dark:text-rose-400">
+                      {workflow.mismatches.map((m: any, idx: number) => (
+                        <li key={idx}>{formatMismatch(m)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 text-[10px] font-mono mb-3">
+                    <div>
+                      <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Planned classes</div>
+                      <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
                         {workflow.classPlan?.plannedClasses?.map(c => <li key={c.className}>{c.className}</li>)}
-                     </ul>
-                   </div>
-                   <div>
-                     <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Generated classes</div>
-                     <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-bold text-rose-700 dark:text-rose-400 mb-1">Generated classes</div>
+                      <ul className="list-disc pl-4 text-rose-600 dark:text-rose-400/80">
                         {workflow.classes?.map(c => <li key={c.className}>{c.className}</li>)}
-                     </ul>
-                   </div>
-                </div>
-                <button onClick={() => generateClasses && generateClasses()} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors">
-                  Try again
+                      </ul>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => generateClasses && generateClasses()}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Retry generation
                 </button>
               </div>
             </div>

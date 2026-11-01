@@ -130,4 +130,5 @@ export interface SchemaGenerationWorkflow {
   classPlanStatus?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   classPlanVersion?: number;
   classPlanSource?: 'generated' | 'edited' | 'seeded';
+  mismatches?: any[];
 }

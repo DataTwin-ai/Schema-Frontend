@@ -1293,7 +1293,13 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
-        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED', lastError: err.message }));
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: err.mismatches ? 'planMismatch' : err.message,
+          mismatches: err.mismatches,
+        }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message, mismatches: err.mismatches } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message, mismatches: err.mismatches } as any);
       }
     }

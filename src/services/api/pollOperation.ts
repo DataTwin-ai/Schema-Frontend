@@ -41,7 +41,10 @@ export async function pollOperation(
     }
     
     if (statusData.status === 'FAILED') {
-      throw new Error(statusData.error || 'Operation failed');
+      const error: any = new Error(statusData.error || statusData.message || 'Operation failed');
+      error.status = 'FAILED';
+      error.mismatches = statusData.mismatches || statusData.result?.mismatches;
+      throw error;
     }
   }
 }
