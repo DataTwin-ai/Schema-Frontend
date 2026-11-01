@@ -37,9 +37,10 @@ export class ApiClassPlanService {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      const error: any = new Error(err.detail || `HTTP ${res.status}`);
+      const error: any = new Error(err.detail || err.message || `HTTP ${res.status}`);
       error.status = res.status;
       error.errors = err.errors;
+      error.serverVersion = err.server_version || err.serverVersion || err.current_version || err.currentVersion;
       throw error;
     }
 
@@ -55,9 +56,10 @@ export class ApiClassPlanService {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      const error: any = new Error(err.detail || `HTTP ${res.status}`);
+      const error: any = new Error(err.detail || err.message || `HTTP ${res.status}`);
       error.status = res.status;
       error.errors = err.errors;
+      error.serverVersion = err.server_version || err.serverVersion || err.current_version || err.currentVersion;
       throw error;
     }
 

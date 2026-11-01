@@ -224,8 +224,8 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
     } catch (err: any) {
       if (err.status === 409) {
         // Version conflict
-        const match = err.message?.match(/current version is (\d+)/);
-        const serverV = match ? parseInt(match[1], 10) : version + 1;
+        const match = err.message?.match(/current version is (\d+)/i) || err.message?.match(/v(\d+)/i);
+        const serverV = err.serverVersion || (match ? parseInt(match[1], 10) : version + 1);
         setConflictError({ serverVersion: serverV });
       } else if (err.status === 422 && err.errors) {
         const errorMap: Record<number, string[]> = {};
@@ -253,8 +253,8 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
       onClose();
     } catch (err: any) {
       if (err.status === 409) {
-        const match = err.message?.match(/current version is (\d+)/);
-        const serverV = match ? parseInt(match[1], 10) : version + 1;
+        const match = err.message?.match(/current version is (\d+)/i) || err.message?.match(/v(\d+)/i);
+        const serverV = err.serverVersion || (match ? parseInt(match[1], 10) : version + 1);
         setConflictError({ serverVersion: serverV });
       } else if (err.status === 422 && err.errors) {
         const errorMap: Record<number, string[]> = {};
@@ -345,10 +345,27 @@ export const ClassPlanApprovalModal: React.FC<ClassPlanApprovalModalProps> = ({
     }
   };
 
-  const handleKeepMine = () => {
-    if (conflictError) {
-      setVersion(conflictError.serverVersion);
-      setConflictError(null);
+  const handleKeepMine = async () => {
+    if (!conflictError) return;
+    const targetVersion = conflictError.serverVersion;
+    setVersion(targetVersion);
+    setConflictError(null);
+    const currentText = viewMode === 'raw' ? rawText : renderLockedPlan(classes, unmetText);
+    setActionLoading('draft');
+    try {
+      const updated = await onSaveDraft(currentText, targetVersion);
+      setVersion(updated.version);
+      setSource('edited');
+      setSaveSuccessNotice(`Draft saved (v${updated.version})`);
+      setTimeout(() => setSaveSuccessNotice(null), 3000);
+    } catch (err: any) {
+      if (err.status === 409) {
+        const match = err.message?.match(/current version is (\d+)/i) || err.message?.match(/v(\d+)/i);
+        const serverV = err.serverVersion || (match ? parseInt(match[1], 10) : targetVersion + 1);
+        setConflictError({ serverVersion: serverV });
+      }
+    } finally {
+      setActionLoading(null);
     }
   };
 
