@@ -39,6 +39,7 @@ import {
   requirementHistoryService,
   classHistoryService,
   schemaHistoryService,
+  apiClassPlanService,
 } from '../services';
 import { formatClassSpecification } from '../utils/classUtils';
 
@@ -539,10 +540,59 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
       });
     });
 
+    const unsubClassPlan = apiFileSyncService.onClassPlanChanged(async (event) => {
+      if (!workflow.runId || (event.runId && event.runId !== workflow.runId)) return;
+      try {
+        const freshPlan = await apiClassPlanService.getClassPlan(workflow.runId);
+        if (freshPlan) {
+          const normalized = normalizeClassPlanData(freshPlan, freshPlan.source || 'generated');
+          setClassPlanData(normalized);
+          setWorkflow((prev) => ({
+            ...prev,
+            classPlanStatus: normalized.status,
+            classPlanVersion: normalized.version,
+            classPlanSource: normalized.source,
+            classPlanText: normalized.text,
+          }));
+        } else if (event.status) {
+          setWorkflow((prev) => ({
+            ...prev,
+            classPlanStatus: event.status as any,
+            classPlanVersion: event.version || prev.classPlanVersion,
+            classPlanSource: (event.source as any) || prev.classPlanSource,
+          }));
+        }
+      } catch (err: any) {
+        console.warn('Failed to refresh class plan from SSE event:', err);
+      }
+    });
+
+    // When run opens (from History or elsewhere), read GET .../class-plan
+    if (workflow.runId) {
+      apiClassPlanService.getClassPlan(workflow.runId).then((plan) => {
+        if (!plan) return;
+        const normalized = normalizeClassPlanData(plan, plan.source || 'generated');
+        setClassPlanData(normalized);
+        setWorkflow((prev) => {
+          if (prev.runId !== workflow.runId) return prev;
+          return {
+            ...prev,
+            classPlanStatus: normalized.status,
+            classPlanVersion: normalized.version,
+            classPlanSource: normalized.source,
+            classPlanText: normalized.text,
+          };
+        });
+      }).catch((e) => {
+        console.warn('Failed to check class-plan on run load:', e);
+      });
+    }
+
     return () => {
       unsubFile();
       unsubStale();
       unsubOp();
+      unsubClassPlan();
     };
   }, [workflow.runId]);
 
@@ -1054,6 +1104,7 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
     setWorkflow((prev) => ({
       ...prev,
       id: historyDetail.runId || prev.id,
+      runId: historyDetail.runId || prev.runId,
       runStatus: historyDetail.status || prev.runStatus,
       title: historyDetail.schemaGroupName || prev.title,
       domain: historyDetail.schemaGroupName || prev.domain,
