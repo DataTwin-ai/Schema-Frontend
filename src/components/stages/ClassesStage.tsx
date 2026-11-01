@@ -880,7 +880,6 @@ export const ClassesStage: React.FC = () => {
   const handlePasteSubmit = async (text: string, optionId?: string) => {
     if (optionId === 'class-plan') {
       await seedClassPlan(text);
-      if (generateClasses) await generateClasses();
     } else {
       await seedClassPrompts({ combinedText: text });
     }

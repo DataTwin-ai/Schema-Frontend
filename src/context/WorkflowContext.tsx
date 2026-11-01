@@ -616,20 +616,32 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `Failed to seed class plan (HTTP ${res.status})`);
+      const errorMsg = err.detail || `Failed to seed class plan (HTTP ${res.status})`;
+      showToast(errorMsg, 'error');
+      throw new Error(errorMsg);
     }
     const data = await res.json();
-    const newRunId = data.runId;
+    const newRunId = data.runId || workflow.runId;
+    const normalized = normalizeClassPlanData(classPlanText, 'seeded');
+    normalized.source = 'seeded';
+    normalized.status = 'PENDING_APPROVAL';
+
     if (newRunId) {
       setWorkflow(prev => ({
         ...prev,
         runId: newRunId,
+        stage: 'classes',
         startStage: 'classes',
-        classPlanText
+        classPlanText,
+        classPlanStatus: 'PENDING_APPROVAL',
+        classPlanSource: 'seeded',
+        classPlanVersion: normalized.version,
+        generationStatus: 'idle',
       }));
       syncRunIdToUrl(newRunId);
       apiFileSyncService.subscribe(newRunId);
     }
+
     setFiles(prev => ({
       ...prev,
       'input/01_Locked_Class_Plan.txt': {
@@ -639,8 +651,13 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
         originalContent: classPlanText
       }
     }));
+
+    // Open popup immediately in seeded mode before generation
+    setClassPlanData(normalized);
+    setIsClassPlanModalOpen(true);
+
     return data;
-  }, [workflow.runId, syncRunIdToUrl]);
+  }, [workflow.runId, syncRunIdToUrl, showToast]);
 
   const seedClassPrompts = useCallback(async (promptsOrCombined: { prompts?: any[]; combinedText?: string }) => {
     const res = await fetch(`${API_URL}/runs/seed/class-prompts`, {

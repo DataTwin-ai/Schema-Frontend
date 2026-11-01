@@ -30,7 +30,7 @@ import { GenerateWithInfoModal } from '../common/GenerateWithInfoModal';
 import { AddNewBusinessRequirementModal } from '../common/AddNewBusinessRequirementModal';
 import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUpload';
 import { StaleStageBanner } from '../common/StaleStageBanner';
-import { PasteExistingModal } from '../common/PasteExistingModal';
+import { PasteExistingModal, PasteOption } from '../common/PasteExistingModal';
 import { API_URL } from '../../services/api/config';
 import { useStageData } from '../../hooks/useStageData';
 
@@ -413,6 +413,7 @@ export const RequirementsStage: React.FC = () => {
     updateFileContent,
     files,
     seedRequirements,
+    seedClassPlan,
     stageStatus,
     refreshStageStatus
   } = useWorkflow();
@@ -428,6 +429,21 @@ export const RequirementsStage: React.FC = () => {
 
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const pasteOptions: PasteOption[] = [
+    {
+      id: 'requirements',
+      label: 'Requirements Text',
+      description: 'Paste requirements specification text directly.',
+      placeholder: 'Paste requirements specification text here...',
+    },
+    {
+      id: 'class-plan',
+      label: 'Locked Class Plan',
+      description: 'Paste a locked class plan (seed/class-plan). You can review and approve it before generation.',
+      placeholder: 'e.g.\n1. ClassName: PrePaidExpenseAllocation | Datasource: PrePaidReport | Trigger: 2\n...',
+    },
+  ];
 
   useEffect(() => {
     refreshStageStatus();
@@ -636,11 +652,16 @@ export const RequirementsStage: React.FC = () => {
         <PasteExistingModal
           isOpen={isPasteModalOpen}
           onClose={() => setIsPasteModalOpen(false)}
-          title="Paste Existing Requirements"
-          subtitle="Seed requirements to generate and lock a class plan directly"
-          placeholder="Paste requirements specification text here..."
-          onPaste={async (text) => {
-            await seedRequirements(text);
+          title="Paste Existing Data"
+          subtitle="Seed requirements or a locked class plan directly"
+          options={pasteOptions}
+          defaultOptionId="requirements"
+          onPaste={async (text, optionId) => {
+            if (optionId === 'class-plan') {
+              await seedClassPlan(text);
+            } else {
+              await seedRequirements(text);
+            }
           }}
         />
       </div>
@@ -1114,11 +1135,16 @@ export const RequirementsStage: React.FC = () => {
       <PasteExistingModal
         isOpen={isPasteModalOpen}
         onClose={() => setIsPasteModalOpen(false)}
-        title="Paste Existing Requirements"
-        subtitle="Seed requirements to generate and lock a class plan directly"
-        placeholder="Paste requirements specification text here..."
-        onPaste={async (text) => {
-          await seedRequirements(text);
+        title="Paste Existing Data"
+        subtitle="Seed requirements or a locked class plan directly"
+        options={pasteOptions}
+        defaultOptionId="requirements"
+        onPaste={async (text, optionId) => {
+          if (optionId === 'class-plan') {
+            await seedClassPlan(text);
+          } else {
+            await seedRequirements(text);
+          }
         }}
       />
     </div>
