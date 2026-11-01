@@ -135,3 +135,60 @@ export function validateClassPlanRows(
 
   return errorsByLine;
 }
+
+export interface ClassPlanData {
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  source: 'generated' | 'edited' | 'seeded';
+  version: number;
+  text: string;
+  classes: ClassPlanRow[];
+  validation?: {
+    ok: boolean;
+    errors: { line: number; message: string }[];
+  };
+}
+
+export function normalizeClassPlanData(
+  plan: any,
+  fallbackSource: 'generated' | 'edited' | 'seeded' = 'generated'
+): ClassPlanData {
+  if (!plan) {
+    return {
+      status: 'PENDING_APPROVAL',
+      source: fallbackSource,
+      version: 1,
+      text: '',
+      classes: [],
+    };
+  }
+
+  if (typeof plan === 'string') {
+    const parsed = parseLockedPlan(plan);
+    return {
+      status: 'PENDING_APPROVAL',
+      source: fallbackSource,
+      version: 1,
+      text: plan,
+      classes: parsed.classes,
+    };
+  }
+
+  let text = plan.text || '';
+  let classes = Array.isArray(plan.classes) ? plan.classes : [];
+
+  if (!text && classes.length > 0) {
+    text = renderLockedPlan(classes);
+  } else if (classes.length === 0 && text) {
+    classes = parseLockedPlan(text).classes;
+  }
+
+  return {
+    status: plan.status || 'PENDING_APPROVAL',
+    source: plan.source || fallbackSource,
+    version: typeof plan.version === 'number' ? plan.version : 1,
+    text,
+    classes,
+    validation: plan.validation,
+  };
+}
+

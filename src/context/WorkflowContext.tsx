@@ -45,6 +45,8 @@ import { formatClassSpecification } from '../utils/classUtils';
 import { apiFileSyncService, FileChangedEvent, OperationEvent, StaleEvent } from '../services/api/ApiFileSyncService';
 import { ConflictResolutionModal, ConflictInfo } from '../components/common/ConflictResolutionModal';
 import { FileChangedToast, DirtyFileNotice } from '../components/common/FileChangedToast';
+import { AppToast, ToastMessage } from '../components/common/AppToast';
+import { ClassPlanData, normalizeClassPlanData } from '../utils/classPlanUtils';
 
 interface WorkflowContextValue {
   workflow: SchemaGenerationWorkflow;
@@ -98,6 +100,7 @@ interface WorkflowContextValue {
   generateClasses: () => Promise<void>;
   generateSchema: () => Promise<void>;
   isGeneratingModalOpen: boolean;
+  setIsGeneratingModalOpen: (open: boolean) => void;
   closeGeneratingModal: () => void;
   generationOperationLabel: string;
   setGenerationOperationLabel: (label: string) => void;
@@ -192,6 +195,19 @@ interface WorkflowContextValue {
   seedClassPlan: (classPlanText: string) => Promise<any>;
   seedClassPrompts: (promptsOrCombined: { prompts?: any[]; combinedText?: string }) => Promise<any>;
   seedSchema: (schemaJson: any) => Promise<any>;
+
+  // Toast notifications
+  toasts: ToastMessage[];
+  showToast: (message: string, type?: 'info' | 'success' | 'error') => void;
+  dismissToast: (id: string) => void;
+
+  // Class plan review popup
+  isClassPlanModalOpen: boolean;
+  setIsClassPlanModalOpen: (open: boolean) => void;
+  classPlanData: ClassPlanData | null;
+  setClassPlanData: (data: ClassPlanData | null) => void;
+  openClassPlanModal: (plan?: ClassPlanData) => void;
+  closeClassPlanModal: () => void;
 }
 
 const initialWorkflow: SchemaGenerationWorkflow = {
@@ -232,6 +248,34 @@ export const WorkflowProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [generationOperationLabel, setGenerationOperationLabel] = useState<string>('Generating\u2026');
   const [theme, setThemeState] = useState<'light' | 'dark'>('light');
   const [generationCost, setGenerationCost] = useState<GenerationCost>(initialGenerationCost);
+
+  // Toast notifications state
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const showToast = useCallback((message: string, type: 'info' | 'success' | 'error' = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Class plan approval popup state
+  const [isClassPlanModalOpen, setIsClassPlanModalOpen] = useState<boolean>(false);
+  const [classPlanData, setClassPlanData] = useState<ClassPlanData | null>(null);
+
+  const openClassPlanModal = useCallback((plan?: ClassPlanData) => {
+    if (plan) {
+      setClassPlanData(plan);
+    }
+    setIsClassPlanModalOpen(true);
+  }, []);
+
+  const closeClassPlanModal = useCallback(() => {
+    setIsClassPlanModalOpen(false);
+  }, []);
 
   // App Navigation & History Edit State
   const [activeView, setActiveView] = useState<'generator' | 'history'>('generator');
@@ -1214,6 +1258,23 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         workflow.additionalInformation
       );
 
+      if ((result as any)?.awaitingApproval) {
+        setIsGeneratingModalOpen(false);
+        const plan = (result as any).plan;
+        const normalized = normalizeClassPlanData(plan, 'generated');
+        setClassPlanData(normalized);
+        setIsClassPlanModalOpen(true);
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          classPlanStatus: 'PENDING_APPROVAL',
+          generationStatus: 'idle',
+          classPlanText: normalized.text,
+          classPlanVersion: normalized.version,
+          classPlanSource: normalized.source,
+        }));
+        return;
+      }
+
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         classes: result,
@@ -1224,16 +1285,16 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
       setTimeout(() => setIsGeneratingModalOpen(false), 1500);
     } catch (err: any) {
       console.error(err);
+      showToast(err.message || 'Failed to generate classes', 'error');
       if (err.message === "Another generation is running") {
-        alert("Another generation is running");
         setIsGeneratingModalOpen(false);
       } else if (err.name === 'StoppedError') {
-        alert("Generation stopped");
+        showToast("Generation stopped", 'info');
         setIsGeneratingModalOpen(false);
         setActiveOperation(null);
       } else {
-        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
-        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message } as any);
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED', lastError: err.message }));
+        setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message, mismatches: err.mismatches } : { operationId: 'local', status: 'FAILED', message: 'Failed', error: err.message, mismatches: err.mismatches } as any);
       }
     }
   }, [workflow.runId]);
@@ -1812,6 +1873,7 @@ return (
         generateRequirements,
         generateSchema,
         isGeneratingModalOpen,
+        setIsGeneratingModalOpen,
         closeGeneratingModal,
         generationOperationLabel,
         setGenerationOperationLabel,
@@ -1871,6 +1933,17 @@ return (
         seedClassPlan,
         seedClassPrompts,
         seedSchema,
+
+        // Toasts & Class Plan Modal
+        toasts,
+        showToast,
+        dismissToast,
+        isClassPlanModalOpen,
+        setIsClassPlanModalOpen,
+        classPlanData,
+        setClassPlanData,
+        openClassPlanModal,
+        closeClassPlanModal,
       }}
     >
       {children}
@@ -1884,6 +1957,10 @@ return (
         notice={dirtyFileNotice}
         onReload={handleReloadDirtyNotice}
         onKeepEditing={() => setDirtyFileNotice(null)}
+      />
+      <AppToast
+        toasts={toasts}
+        onDismiss={dismissToast}
       />
     </WorkflowContext.Provider>
   );

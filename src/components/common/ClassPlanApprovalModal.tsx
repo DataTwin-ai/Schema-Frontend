@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { 
   ClassPlanRow, 
+  ClassPlanData,
   VALID_TRIGGERS, 
   DEFAULT_DATASOURCES, 
   parseLockedPlan, 
@@ -25,17 +26,8 @@ import {
   validateClassPlanRows 
 } from '../../utils/classPlanUtils';
 
-export interface ClassPlanData {
-  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
-  source: 'generated' | 'edited' | 'seeded';
-  version: number;
-  text: string;
-  classes: ClassPlanRow[];
-  validation?: {
-    ok: boolean;
-    errors: { line: number; message: string }[];
-  };
-}
+export type { ClassPlanData };
+
 
 interface ClassPlanApprovalModalProps {
   isOpen: boolean;

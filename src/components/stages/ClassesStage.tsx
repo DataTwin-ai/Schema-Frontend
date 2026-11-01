@@ -23,7 +23,7 @@ import {
   Eye,
   Clipboard
 } from 'lucide-react';
-import { SchemaClass, ClassVersion, SchemaComponent } from '../../types';
+import { SchemaClass, ClassVersion, SchemaComponent, SchemaGenerationWorkflow } from '../../types';
 import { StageActionBar } from '../layout/StageActionBar';
 import { SaveDraftButton } from '../common/SaveDraftButton';
 import { API_URL } from '../../services/api/config';
@@ -37,6 +37,10 @@ import { AdditionalRequirementUpload } from '../common/AdditionalRequirementUplo
 import { SCDPInputsModal } from './SCDPInputsModal';
 import { StaleStageBanner } from '../common/StaleStageBanner';
 import { PasteExistingModal, PasteOption } from '../common/PasteExistingModal';
+import { ClassPlanApprovalModal } from '../common/ClassPlanApprovalModal';
+import { apiClassPlanService, classService } from '../../services';
+import { normalizeClassPlanData, ClassPlanData, DEFAULT_DATASOURCES } from '../../utils/classPlanUtils';
+import { pollOperation } from '../../services/api/pollOperation';
 
 interface ClassRowProps {
   item: SchemaClass;
@@ -594,7 +598,17 @@ export const ClassesStage: React.FC = () => {
     seedClassPlan,
     seedClassPrompts,
     stageStatus,
-    refreshStageStatus
+    refreshStageStatus,
+    setWorkflow,
+    activeOperation,
+    setIsGeneratingModalOpen,
+    setGenerationOperationLabel,
+    isClassPlanModalOpen,
+    closeClassPlanModal,
+    openClassPlanModal,
+    classPlanData,
+    setClassPlanData,
+    showToast
   } = useWorkflow();
   const { user } = useAuth();
   const userName = user?.name || 'You';
@@ -663,6 +677,157 @@ export const ClassesStage: React.FC = () => {
   const [newClassDatasource, setNewClassDatasource] = useState('PrePaidReport');
   const [newClassGrain, setNewClassGrain] = useState('Per itemid Monthly');
   const [classPlanExpanded, setClassPlanExpanded] = useState(false);
+
+  const availableDatasources = useMemo(() => {
+    const set = new Set<string>(DEFAULT_DATASOURCES);
+    classes.forEach((c) => {
+      if (c.datasource) set.add(c.datasource);
+    });
+    return Array.from(set);
+  }, [classes]);
+
+  const handleApprovePlan = async (text: string, baseVersion: number) => {
+    if (!workflow.runId) return;
+    try {
+      const response = await apiClassPlanService.approvePlan(workflow.runId, text, baseVersion);
+      closeClassPlanModal();
+      setIsGeneratingModalOpen(true);
+      setGenerationOperationLabel('Generating Domain Classes...');
+
+      const opId = response.operationId || activeOperation?.operationId;
+      let statusData: any = null;
+      if (opId) {
+        statusData = await pollOperation(opId, (step) => {
+          setWorkflow((prev: SchemaGenerationWorkflow) => {
+            const existingIdx = prev.currentProgressSteps.findIndex((s) => s.id === step.id);
+            const newSteps = [...prev.currentProgressSteps];
+            if (existingIdx >= 0) {
+              newSteps[existingIdx] = step;
+            } else {
+              newSteps.push(step);
+            }
+            return { ...prev, currentProgressSteps: newSteps };
+          });
+        });
+      }
+
+      // Load class prompts into existing cards
+      let rawClasses: any[] = [];
+      try {
+        const promptsRes = await fetch(`${API_URL}/class-prompts?run_id=${workflow.runId}`);
+        if (promptsRes.ok) {
+          const promptsData = await promptsRes.json();
+          rawClasses = promptsData.classes || [];
+        }
+      } catch (e) {
+        console.warn('Failed to load class prompts:', e);
+      }
+
+      if (rawClasses.length === 0 && statusData) {
+        rawClasses = Array.isArray(statusData.classes)
+          ? statusData.classes
+          : (statusData.result?.classes || statusData.result || []);
+      }
+
+      const mapped = (classService as any).mapClasses ? (classService as any).mapClasses(rawClasses) : rawClasses;
+      setWorkflow((prev: SchemaGenerationWorkflow) => ({
+        ...prev,
+        classes: mapped,
+        stage: 'classes',
+        generationStatus: 'completed',
+        classPlanStatus: 'APPROVED',
+        updatedAt: new Date().toISOString(),
+      }));
+      setTimeout(() => setIsGeneratingModalOpen(false), 1500);
+    } catch (err: any) {
+      setIsGeneratingModalOpen(false);
+      showToast(err.message || 'Approval failed', 'error');
+      if (err.mismatches || err.status === 'FAILED') {
+        setWorkflow((prev) => ({
+          ...prev,
+          generationStatus: 'error',
+          lastError: 'planMismatch',
+          outputs: { ...(prev.outputs || {}), mismatches: err.mismatches || [err.message] }
+        }));
+      }
+      throw err;
+    }
+  };
+
+  const handleSaveDraftPlan = async (text: string, baseVersion: number): Promise<ClassPlanData> => {
+    if (!workflow.runId) throw new Error('No run ID');
+    try {
+      const res = await apiClassPlanService.saveDraft(workflow.runId, text, baseVersion);
+      const normalized = normalizeClassPlanData(res, 'edited');
+      setClassPlanData(normalized);
+      setWorkflow((prev) => ({
+        ...prev,
+        classPlanText: normalized.text,
+        classPlanVersion: normalized.version,
+        classPlanSource: 'edited',
+      }));
+      showToast('Draft saved successfully', 'success');
+      return normalized;
+    } catch (err: any) {
+      if (err.status !== 409 && err.status !== 422) {
+        showToast(err.message || 'Failed to save draft', 'error');
+      }
+      throw err;
+    }
+  };
+
+  const handleRegeneratePlan = async (): Promise<ClassPlanData> => {
+    if (!workflow.runId) throw new Error('No run ID');
+    try {
+      const res = await apiClassPlanService.regeneratePlan(workflow.runId);
+      const normalized = normalizeClassPlanData(res, 'generated');
+      setClassPlanData(normalized);
+      setWorkflow((prev) => ({
+        ...prev,
+        classPlanText: normalized.text,
+        classPlanVersion: normalized.version,
+        classPlanSource: 'generated',
+      }));
+      showToast('Class plan regenerated', 'success');
+      return normalized;
+    } catch (err: any) {
+      showToast(err.message || 'Failed to regenerate class plan', 'error');
+      throw err;
+    }
+  };
+
+  const handleRejectPlan = async () => {
+    if (!workflow.runId) return;
+    try {
+      await apiClassPlanService.rejectPlan(workflow.runId);
+      closeClassPlanModal();
+      setWorkflow((prev) => ({
+        ...prev,
+        classPlanStatus: 'REJECTED',
+        generationStatus: 'idle',
+      }));
+      showToast('Class generation stopped', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject class plan', 'error');
+      throw err;
+    }
+  };
+
+  const handleFetchServerPlan = async (): Promise<ClassPlanData | null> => {
+    if (!workflow.runId) return null;
+    try {
+      const res = await apiClassPlanService.getClassPlan(workflow.runId);
+      if (res) {
+        const normalized = normalizeClassPlanData(res, res.source || 'generated');
+        setClassPlanData(normalized);
+        return normalized;
+      }
+      return null;
+    } catch (err: any) {
+      showToast(err.message || 'Failed to fetch server plan', 'error');
+      throw err;
+    }
+  };
 
   const pasteOptions: PasteOption[] = [
     {
@@ -774,6 +939,20 @@ export const ClassesStage: React.FC = () => {
           defaultOptionId="class-plan"
           onPaste={handlePasteSubmit}
         />
+        {isClassPlanModalOpen && classPlanData && (
+          <ClassPlanApprovalModal
+            isOpen={isClassPlanModalOpen}
+            onClose={closeClassPlanModal}
+            runId={workflow.runId || ''}
+            initialPlan={classPlanData}
+            registeredDatasources={availableDatasources}
+            onApprove={handleApprovePlan}
+            onSaveDraft={handleSaveDraftPlan}
+            onRegenerate={handleRegeneratePlan}
+            onReject={handleRejectPlan}
+            onFetchServerPlan={handleFetchServerPlan}
+          />
+        )}
       </div>
     );
   }
@@ -1208,6 +1387,21 @@ export const ClassesStage: React.FC = () => {
         defaultOptionId="class-plan"
         onPaste={handlePasteSubmit}
       />
+
+      {isClassPlanModalOpen && classPlanData && (
+        <ClassPlanApprovalModal
+          isOpen={isClassPlanModalOpen}
+          onClose={closeClassPlanModal}
+          runId={workflow.runId || ''}
+          initialPlan={classPlanData}
+          registeredDatasources={availableDatasources}
+          onApprove={handleApprovePlan}
+          onSaveDraft={handleSaveDraftPlan}
+          onRegenerate={handleRegeneratePlan}
+          onReject={handleRejectPlan}
+          onFetchServerPlan={handleFetchServerPlan}
+        />
+      )}
     </div>
   );
 };
