@@ -85,6 +85,11 @@ export interface ClassPlan {
   locked?: boolean;
   plannedClasses: PlannedClass[];
   uncertainTriggers?: ClassPlanTrigger[];
+  status?: string;
+  source?: string;
+  version?: number;
+  text?: string;
+  classes?: any[];
 }
 
 export interface SchemaGenerationWorkflow {

@@ -744,6 +744,9 @@ export const ClassesStage: React.FC = () => {
             }));
           }
         );
+      } else if (generateClasses) {
+        await generateClasses();
+        return;
       }
 
       if (statusData?.status === 'AWAITING_APPROVAL') {
@@ -802,6 +805,21 @@ export const ClassesStage: React.FC = () => {
       }
     } catch (err: any) {
       setIsGeneratingModalOpen(false);
+      if (err.status === 409 && err.classPlan) {
+        const normalized = normalizeClassPlanData(err.classPlan, 'generated');
+        setClassPlanData(normalized);
+        setIsClassPlanModalOpen(true);
+        setWorkflow((prev) => ({
+          ...prev,
+          classPlan: err.classPlan,
+          classPlanStatus: 'PENDING_APPROVAL',
+          generationStatus: 'idle',
+          classPlanText: normalized.text,
+          classPlanVersion: normalized.version,
+          classPlanSource: normalized.source,
+        }));
+        return;
+      }
       if (err.name === 'StoppedError') {
         showToast("Generation stopped", 'info');
         setWorkflow((prev) => ({
@@ -908,21 +926,59 @@ export const ClassesStage: React.FC = () => {
   };
 
   const handleOpenReviewPlan = async () => {
-    if (!classPlanData) {
+    let plan = classPlanData;
+    if (!plan) {
       try {
         const serverPlan = await handleFetchServerPlan();
-        if (!serverPlan && workflow.classPlanText) {
-          const fallback = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
-          setClassPlanData(fallback);
+        if (serverPlan) {
+          plan = serverPlan;
+        } else if (workflow.classPlanText) {
+          plan = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
+          setClassPlanData(plan);
         }
       } catch (e) {
         if (workflow.classPlanText) {
-          const fallback = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
-          setClassPlanData(fallback);
+          plan = normalizeClassPlanData(workflow.classPlanText, workflow.classPlanSource || 'generated');
+          setClassPlanData(plan);
         }
       }
     }
-    openClassPlanModal();
+    openClassPlanModal(plan || undefined);
+  };
+
+  const autoOpenedRunRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const isPending =
+      workflow.classPlanStatus === 'PENDING_APPROVAL' ||
+      workflow.classPlan?.status === 'PENDING_APPROVAL' ||
+      classPlanData?.status === 'PENDING_APPROVAL';
+
+    const runKey = `${workflow.runId || 'current'}_${workflow.classPlanVersion || 1}`;
+
+    if (isPending && autoOpenedRunRef.current !== runKey) {
+      autoOpenedRunRef.current = runKey;
+      handleOpenReviewPlan();
+    }
+  }, [workflow.runId, workflow.classPlanStatus, workflow.classPlan, classPlanData, workflow.classPlanVersion]);
+
+  const handleGenerateClassesClick = async () => {
+    const isPlanApproved = workflow.classPlanStatus === 'APPROVED';
+    if (!isPlanApproved) {
+      handleOpenReviewPlan();
+      return;
+    }
+    if (generateClasses) {
+      try {
+        await generateClasses();
+      } catch (err: any) {
+        if (err.status === 409 && err.classPlan) {
+          const normalized = normalizeClassPlanData(err.classPlan, 'generated');
+          setClassPlanData(normalized);
+          openClassPlanModal(normalized);
+        }
+      }
+    }
   };
 
   const pasteOptions: PasteOption[] = [
@@ -1075,7 +1131,7 @@ export const ClassesStage: React.FC = () => {
                   </button>
                 )}
                 <button
-                  onClick={() => generateClasses && generateClasses()}
+                  onClick={handleGenerateClassesClick}
                   disabled={!isClassesReady}
                   title={!isClassesReady ? `Disabled: Missing ${missingInputs}` : 'Generate Classes'}
                   className="px-4 py-2 bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold cursor-pointer"
@@ -1270,7 +1326,12 @@ export const ClassesStage: React.FC = () => {
             stageName="Classes"
             reason={staleStages.classes || staleStages.class}
             onRegenerate={async () => {
-              if (generateClasses) await generateClasses();
+              try {
+                const plan = await handleRegeneratePlan();
+                openClassPlanModal(plan);
+              } catch (e) {
+                if (generateClasses) await generateClasses();
+              }
               clearStaleStage('classes');
               clearStaleStage('class');
             }}

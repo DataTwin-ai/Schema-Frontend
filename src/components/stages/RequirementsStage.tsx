@@ -33,6 +33,8 @@ import { StaleStageBanner } from '../common/StaleStageBanner';
 import { PasteExistingModal, PasteOption } from '../common/PasteExistingModal';
 import { API_URL } from '../../services/api/config';
 import { useStageData } from '../../hooks/useStageData';
+import { normalizeClassPlanData } from '../../utils/classPlanUtils';
+import { apiClassPlanService } from '../../services';
 
 interface RequirementItem {
   id: string;
@@ -396,6 +398,7 @@ export const RequirementsStage: React.FC = () => {
     workflow, 
     setStage,
     setWorkflow,
+    setClassPlanData,
     getRequirementVersions,
     updateProblemStatement, 
     updateBusinessObjective, 
@@ -548,8 +551,43 @@ export const RequirementsStage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (!res.ok) {
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        let returnedPlan = data.classPlan || data.plan || data.lockedPlan || (data.text ? data : null) || (data.classes ? data : null);
+        if (!returnedPlan) {
+          try {
+            returnedPlan = await apiClassPlanService.getClassPlan(workflow.runId);
+          } catch (_) {}
+        }
+        if (returnedPlan) {
+          const normalized = normalizeClassPlanData(returnedPlan, (returnedPlan as any).source || 'generated');
+          setClassPlanData(normalized);
+          setWorkflow(prev => ({
+            ...prev,
+            classPlan: returnedPlan as any,
+            classPlanStatus: (returnedPlan as any).status || normalized.status || 'PENDING_APPROVAL',
+            classPlanVersion: (returnedPlan as any).version || normalized.version,
+            classPlanSource: (returnedPlan as any).source || normalized.source,
+            classPlanText: normalized.text,
+          }));
+        }
+      } else {
         console.warn(`scdp-input returned status ${res.status}`);
+        try {
+          const fallbackPlan = await apiClassPlanService.getClassPlan(workflow.runId);
+          if (fallbackPlan) {
+            const normalized = normalizeClassPlanData(fallbackPlan, fallbackPlan.source || 'generated');
+            setClassPlanData(normalized);
+            setWorkflow(prev => ({
+              ...prev,
+              classPlan: fallbackPlan as any,
+              classPlanStatus: normalized.status || 'PENDING_APPROVAL',
+              classPlanVersion: normalized.version,
+              classPlanSource: normalized.source,
+              classPlanText: normalized.text,
+            }));
+          }
+        } catch (_) {}
       }
     } catch (err) {
       console.error('Failed to sync scdp-input:', err);
