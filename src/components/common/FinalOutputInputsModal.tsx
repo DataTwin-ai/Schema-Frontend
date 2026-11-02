@@ -134,7 +134,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
            const dsNode = cls.children.find((c:any) => c.title === 'DataSource');
            if (dsNode) dsName = dsNode.val;
          }
-         const isPresent = Object.keys(dsCounts).includes(dsName);
+         const isPresent = dsName.toLowerCase() === '#consolidate#' || Object.keys(dsCounts).includes(dsName);
          return { name: dsName, present: isPresent };
       });
       setCoverage(cov);
@@ -282,7 +282,7 @@ export const FinalOutputInputsModal: React.FC<FinalOutputInputsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const hasCoverageError = coverage.some(c => !c.present);
+  const hasCoverageError = coverage.some(c => c.name.toLowerCase() !== '#consolidate#' && !c.present);
   const isValidSchemaKey = schemaKey.endsWith('.json') || schemaKey.startsWith('s3://');
   
   const canRun = 

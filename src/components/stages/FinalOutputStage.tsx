@@ -32,6 +32,7 @@ import { StaleStageBanner } from '../common/StaleStageBanner';
 export const FinalOutputStage: React.FC = () => {
   const { 
     workflow, 
+    setWorkflow,
     setStage, 
     setRunStatus, 
     setActiveOperation,
@@ -40,13 +41,18 @@ export const FinalOutputStage: React.FC = () => {
     staleStages,
     clearStaleStage,
     stageStatus,
-    refreshStageStatus
+    refreshStageStatus,
+    showToast
   } = useWorkflow();
+
+  const { data: stageFinalOutput } = useStageData<any>('final_output');
+  const { data: stageOutput } = useStageData<any>('output');
   
   const [copied, setCopied] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [executionResult, setExecutionResult] = useState<any>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  const [missingRequiredList, setMissingRequiredList] = useState<string[]>([]);
   const [showErrorPopup, setShowErrorPopup] = useState(false);
   const [resultViewerTab, setResultViewerTab] = useState<'actual' | 'expected' | 'diffs'>('actual');
   const [showAllDiffs, setShowAllDiffs] = useState(false);
@@ -55,31 +61,47 @@ export const FinalOutputStage: React.FC = () => {
   const executionLockRef = useRef<boolean>(false);
   const autoTriggeredRef = useRef<boolean>(false);
 
+  // Date inputs
+  const [forPrdFrom, setForPrdFrom] = useState<string>('2025-04-01');
+  const [forPrdTo, setForPrdTo] = useState<string>('2026-03-31');
+
   // Class-wise viewer state
-  const [selectedClass, setSelectedClass] = useState<string>('ALL');
+  const [selectedClass, setSelectedClass] = useState<string>('Export');
+  const [classRowsCache, setClassRowsCache] = useState<Record<string, any[]>>({});
   const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [page, setPage] = useState<number>(1);
   const pageSize = 25;
   const viewerSectionRef = useRef<HTMLDivElement>(null);
 
-  // Initialize: load existing result or auto-trigger execution if finalOutputInputs exist and haven't executed yet
+  // History / hydration: opening a past run loads GET final-output through useStageData,
+  // so the screen renders without running again.
+  useEffect(() => {
+    const historicalData = stageFinalOutput || stageOutput;
+    if (historicalData && !executionResult) {
+      setExecutionResult(historicalData);
+      setHasExecuted(true);
+    }
+  }, [stageFinalOutput, stageOutput, executionResult]);
+
+  // Initialize: load existing result from backend on mount/run change
   useEffect(() => {
     let mounted = true;
     const fetchExisting = async () => {
-       if (workflow.runId && mounted) {
-         try {
-           const res = await fetch(`${API_URL}/runs/${workflow.runId}/final-output`);
-           if (res.ok) {
-              const data = await res.json();
-              if (mounted && data && !data.error) {
-                 setExecutionResult(data);
-                 if (data.runStatus) setRunStatus(data.runStatus);
-                 setHasExecuted(true);
-              }
-           }
-         } catch(e) {}
-       }
+      if (workflow.runId && mounted) {
+        try {
+          const res = await fetch(`${API_URL}/runs/${workflow.runId}/final-output`);
+          if (res.ok) {
+            const data = await res.json();
+            if (mounted && data && !data.error) {
+              setExecutionResult(data);
+              updateWorkflowField('outputs', { ...workflow.outputs, final_output: data });
+              if (data.runStatus) setRunStatus(data.runStatus);
+              setHasExecuted(true);
+            }
+          }
+        } catch(e) {}
+      }
     };
     fetchExisting();
     return () => { mounted = false; };
@@ -101,22 +123,7 @@ export const FinalOutputStage: React.FC = () => {
     }
   }, [files]);
 
-  useEffect(() => {
-     // Auto-trigger execution if we entered this stage with inputs and haven't executed yet
-     if (
-       workflow.finalOutputInputs &&
-       !hasExecuted &&
-       !executionResult &&
-       !executionError &&
-       !executionLockRef.current &&
-       !autoTriggeredRef.current
-     ) {
-        autoTriggeredRef.current = true;
-        executeSchema(workflow.finalOutputInputs);
-     }
-  }, [workflow.finalOutputInputs, hasExecuted, executionResult, executionError]);
-
-  const executeSchema = async (inputs: any) => {
+  const executeSchema = async (customInputs?: any) => {
     if (executionLockRef.current) {
       console.warn("Execution already in progress, skipping duplicate call.");
       return;
@@ -126,75 +133,157 @@ export const FinalOutputStage: React.FC = () => {
 
     setHasExecuted(true);
     setExecutionError(null);
+    setMissingRequiredList([]);
     setShowErrorPopup(false);
     setExecutionResult(null);
     setIsExecuting(true);
     
     try {
+      const activeInputs = customInputs || workflow.finalOutputInputs;
+      const payload: Record<string, any> = {
+        runId: workflow.runId,
+        forPrdFrom: forPrdFrom || "2025-04-01",
+        forPrdTo: forPrdTo || "2026-03-31",
+      };
+      if (activeInputs?.eventJson) payload.eventJson = activeInputs.eventJson;
+      if (activeInputs?.expectedOutput) payload.expectedOutput = activeInputs.expectedOutput;
+      if (activeInputs?.schemaKey) payload.schemaKey = activeInputs.schemaKey;
+
       const response = await fetch(`${API_URL}/execute-schema`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          runId: workflow.runId,
-          eventJson: inputs.eventJson,
-          expectedOutput: inputs.expectedOutput,
-          schemaKey: inputs.schemaKey,
-          uploadSchema: false,
-          confirmOverwrite: false
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Server returned ${response.status}`);
+        const err: any = new Error(errData.detail || errData.error || errData.message || `Server returned ${response.status}`);
+        err.stage = errData.stage;
+        err.missing = errData.missing || errData.missingDataSources;
+        err.required = errData.required || errData.requiredDataSources;
+        throw err;
       }
-      
+
       const opData = await response.json();
-      
+      let finalStatusData: any = null;
+
       if (opData.operationId) {
-         setActiveOperation({
-            operationId: opData.operationId,
-            type: 'execute-schema',
-            status: 'RUNNING',
-            message: 'Executing Schema'
-         });
-         
-         const finalData = await pollOperation(opData.operationId, (step) => {
-            // Processing updates
-         }, 2000);
-         
-         setExecutionResult(finalData);
-         if (finalData.runStatus) {
-           setRunStatus(finalData.runStatus);
-         } else {
-           const resultStatus = finalData.evaluationResult || finalData.status || 'UNKNOWN';
-           if (resultStatus.toUpperCase() === 'PASS') {
-             setRunStatus('COMPLETED');
-           } else {
-             setRunStatus('FAILED');
-           }
-         }
+        setActiveOperation({
+          operationId: opData.operationId,
+          type: 'execute-schema',
+          status: 'RUNNING',
+          message: 'Executing Schema'
+        });
+
+        finalStatusData = await pollOperation(
+          opData.operationId,
+          (step) => {},
+          (statusUpdate) => {
+            setActiveOperation((prev: any) => ({
+              ...prev,
+              ...statusUpdate,
+              operationId: statusUpdate.operationId || opData.operationId
+            }));
+          }
+        );
       } else {
-         // Immediate result fallback
-         setExecutionResult(opData);
-         const resultStatus = opData.evaluationResult || opData.status || 'UNKNOWN';
-         if (resultStatus.toUpperCase() === 'PASS') {
-           setRunStatus('COMPLETED');
-         } else {
-           setRunStatus('FAILED');
-         }
+        finalStatusData = opData;
+      }
+
+      // Check if operation failed with stage InputCheck
+      if (finalStatusData?.status === 'FAILED' && (finalStatusData.stage === 'InputCheck' || finalStatusData.result?.stage === 'InputCheck')) {
+        const err: any = new Error(finalStatusData.error || finalStatusData.message || 'InputCheck failed');
+        err.stage = 'InputCheck';
+        err.missing = finalStatusData.missing || finalStatusData.missingDataSources || finalStatusData.result?.missing || finalStatusData.result?.missingDataSources;
+        err.required = finalStatusData.required || finalStatusData.requiredDataSources || finalStatusData.result?.required || finalStatusData.result?.requiredDataSources;
+        throw err;
+      }
+
+      // Load GET /api/runs/{runId}/final-output on COMPLETED
+      let outputData: any = null;
+      if (workflow.runId) {
+        try {
+          const foRes = await fetch(`${API_URL}/runs/${workflow.runId}/final-output`);
+          if (foRes.ok) {
+            outputData = await foRes.json();
+          }
+        } catch (e) {
+          console.warn('Failed to load final-output from server:', e);
+        }
+      }
+
+      if (!outputData && finalStatusData) {
+        outputData = finalStatusData.result || finalStatusData;
+      }
+
+      if (outputData && !outputData.error) {
+        setExecutionResult(outputData);
+        updateWorkflowField('outputs', { ...workflow.outputs, final_output: outputData });
+
+        const rawReport = outputData.runReport || outputData.run_report || outputData.report || [];
+        setSelectedClass('Export');
+
+        // Warning toast if any class failed
+        const failedCount = Array.isArray(rawReport)
+          ? rawReport.filter((r: any) => {
+              const s = (r.status || '').toUpperCase();
+              return s === 'FAILED' || s === 'FAIL';
+            }).length
+          : 0;
+
+        if (failedCount > 0) {
+          showToast(`${failedCount} classes failed - see run report`, 'info');
+        } else {
+          showToast('Schema execution completed successfully', 'success');
+        }
+
+        setRunStatus('COMPLETED');
+        setWorkflow(prev => ({
+          ...prev,
+          runStatus: 'COMPLETED',
+          generationStatus: 'completed'
+        }));
       }
 
     } catch (err: any) {
       console.error("Execution failed:", err);
-      if (err.name === 'StoppedError' || (err.message && err.message.toLowerCase().includes('stopped'))) {
-          setExecutionError("Execution stopped by user.");
+      setIsExecuting(false);
+      setActiveOperation(null);
+      setExecutionResult(null); // Do not show any results on error
+
+      const isInputCheck =
+        err.stage === 'InputCheck' ||
+        err.statusData?.stage === 'InputCheck' ||
+        (err.message && (err.message.includes('InputCheck') || err.message.toLowerCase().includes('source data missing')));
+
+      if (isInputCheck) {
+        // FAILED with stage "InputCheck": show error panel with "Source data missing for: <names>" and required list
+        const missingRaw = err.missing || err.statusData?.missing || err.statusData?.missingDataSources;
+        const missingNames = Array.isArray(missingRaw)
+          ? missingRaw.join(', ')
+          : (typeof missingRaw === 'string' ? missingRaw : 'Active_FS');
+        
+        let msg = `Source data missing for: ${missingNames}`;
+        if (err.message && err.message.startsWith('Source data missing for:')) {
+          msg = err.message;
+        }
+        setExecutionError(msg);
+
+        const requiredRaw = err.required || err.statusData?.required || err.statusData?.requiredDataSources;
+        const reqList = Array.isArray(requiredRaw) && requiredRaw.length > 0
+          ? requiredRaw
+          : (Array.isArray(missingRaw) ? missingRaw : [missingNames]);
+        setMissingRequiredList(reqList);
+        setRunStatus('FAILED');
+      } else if (err.name === 'StoppedError' || (err.message && err.message.toLowerCase().includes('stopped'))) {
+        setExecutionError("Execution stopped by user.");
+        showToast("Execution stopped", 'info');
       } else {
-          let msg = err.message || "Failed to execute schema against the provided Event JSON.";
-          setExecutionError(msg);
+        const msg = err.message || "Failed to execute schema against the provided Event JSON.";
+        setExecutionError(msg);
+        setShowErrorPopup(true);
+        setRunStatus('FAILED');
       }
-      setShowErrorPopup(true);
-      setRunStatus('FAILED');
     } finally {
       setIsExecuting(false);
       setActiveOperation(null);
@@ -214,55 +303,93 @@ export const FinalOutputStage: React.FC = () => {
 
   const inputs = workflow.finalOutputInputs;
 
-  // 1. Available Classes extraction
-  const availableClasses = useMemo(() => {
-    const classSet = new Set<string>();
+  // 1. Run Report extraction: columns Class, Status, Rows, Notes / Error
+  const runReport = useMemo(() => {
+    if (!executionResult) return [];
 
-    if (executionResult?.comparison?.schemas) {
-      Object.keys(executionResult.comparison.schemas).forEach(k => classSet.add(k));
-    }
-    if (Array.isArray(executionResult?.schemaComparisons)) {
-      executionResult.schemaComparisons.forEach((c: any) => {
-        if (c.schema) classSet.add(c.schema);
+    const rawList =
+      executionResult.runReport ||
+      executionResult.run_report ||
+      executionResult.report ||
+      executionResult.schemaComparisons ||
+      [];
+
+    if (Array.isArray(rawList) && rawList.length > 0) {
+      return rawList.map((item: any) => {
+        const className =
+          item.class ||
+          item.className ||
+          item.class_name ||
+          item.schema ||
+          item.schemaName ||
+          item.schema_name ||
+          item.name ||
+          'Unknown';
+        
+        let status = (item.status || '').toUpperCase();
+        if (!status) {
+          status = (item.rows ?? item.rowCount ?? 0) > 0 ? 'OK' : 'EMPTY';
+        }
+        if (status === 'PASS' || status === 'MATCH') status = 'OK';
+        if (status === 'FAIL') status = 'FAILED';
+
+        const rows = item.rows ?? item.rowCount ?? item.row_count ?? item.actualCount ?? item.actual ?? item.count ?? 0;
+        const notes = item.notes || item.notes_error || item.notesError || item.error || item.message || '';
+        return { className, status, rows, notes };
       });
     }
-    const actual = executionResult?.actualOutput || executionResult?.output;
-    if (actual) {
-      if (typeof actual === 'object' && !Array.isArray(actual)) {
-        Object.keys(actual).forEach(k => classSet.add(k));
-      } else if (Array.isArray(actual)) {
-        actual.forEach((r: any) => {
-          const name = r?.schemaname || r?.schema || r?.className || r?.class;
-          if (name) classSet.add(name);
-        });
-      }
+
+    if (executionResult.comparison?.schemas) {
+      return Object.entries(executionResult.comparison.schemas).map(([name, data]: [string, any]) => {
+        const rows = data.actualCount ?? data.actual ?? 0;
+        let status = 'OK';
+        if (data.status === 'FAIL' || data.status === 'MISMATCH') status = 'FAILED';
+        else if (rows === 0) status = 'EMPTY';
+        return {
+          className: name,
+          status,
+          rows,
+          notes: data.status || ''
+        };
+      });
     }
-    const expected = executionResult?.expectedOutput || inputs?.expectedOutput;
-    if (expected) {
-      if (typeof expected === 'object' && !Array.isArray(expected) && expected._type !== 'file') {
-        Object.keys(expected).forEach(k => classSet.add(k));
-      } else if (Array.isArray(expected)) {
-        expected.forEach((r: any) => {
-          const name = r?.schemaname || r?.schema || r?.className || r?.class;
-          if (name) classSet.add(name);
-        });
-      }
-    }
+
+    return [];
+  }, [executionResult]);
+
+  // 2. Export Rows extraction
+  const exportRows = useMemo(() => {
+    if (!executionResult) return [];
+    const rows =
+      executionResult.exportRows ||
+      executionResult.export_rows ||
+      executionResult.export ||
+      executionResult.output ||
+      executionResult.actualOutput ||
+      [];
+    return Array.isArray(rows) ? rows : [];
+  }, [executionResult]);
+
+  // 3. Available Classes list
+  const availableClasses = useMemo(() => {
+    const classSet = new Set<string>();
+    runReport.forEach(r => {
+      if (r.className) classSet.add(r.className);
+    });
     if (Array.isArray(workflow?.classes)) {
       workflow.classes.forEach((c: any) => {
         if (c.className) classSet.add(c.className);
       });
     }
-
     return Array.from(classSet);
-  }, [executionResult, inputs, workflow?.classes]);
+  }, [runReport, workflow?.classes]);
 
-  // 2. Helper to get records for a given class
+  // 4. Helper to get records for a given class
   const getRecordsForClass = (data: any, clsName: string): any[] => {
     if (!data) return [];
 
     if (typeof data === 'object' && !Array.isArray(data) && data._type !== 'file') {
-      if (clsName === 'ALL') {
+      if (clsName === 'ALL' || clsName === 'Export') {
         const all: any[] = [];
         Object.entries(data).forEach(([key, val]) => {
           if (Array.isArray(val)) {
@@ -281,7 +408,7 @@ export const FinalOutputStage: React.FC = () => {
     }
 
     if (Array.isArray(data)) {
-      if (clsName === 'ALL') return data;
+      if (clsName === 'ALL' || clsName === 'Export') return data;
       return data.filter((r: any) => {
         if (!r || typeof r !== 'object') return false;
         const primary = r.schemaname || r.schema || r.className || r.class || r._class;
@@ -299,106 +426,46 @@ export const FinalOutputStage: React.FC = () => {
     return [];
   };
 
-  // 3. Class comparisons for the evaluation table
-  const classComparisons = useMemo(() => {
-    if (!executionResult) return [];
+  // 5. Select a class: loads GET /api/runs/{runId}/final-output/class/{schemaName}
+  const handleSelectClass = async (clsName: string) => {
+    setSelectedClass(clsName);
+    setPage(1);
 
-    const rawSchemas = executionResult.comparison?.schemas;
-    const rawList = executionResult.schemaComparisons;
-    const actual = executionResult.actualOutput || executionResult.output;
-    const expected = executionResult.expectedOutput || inputs?.expectedOutput;
-
-    const rows: Array<{ schema: string; expected: number; actual: number; matched: number; status: string }> = [];
-    const seen = new Set<string>();
-
-    if (Array.isArray(rawList) && rawList.length > 0) {
-      rawList.forEach((row: any) => {
-        const sName = row.schema || row.className || 'Unknown';
-        seen.add(sName.toLowerCase());
-        rows.push({
-          schema: sName,
-          expected: row.expectedCount ?? row.expected ?? 0,
-          actual: row.actualCount ?? row.actual ?? 0,
-          matched: row.matchedCount ?? row.matched ?? 0,
-          status: (row.status || 'UNKNOWN').toUpperCase()
-        });
-      });
-    } else if (rawSchemas && typeof rawSchemas === 'object' && Object.keys(rawSchemas).length > 0) {
-      Object.entries(rawSchemas).forEach(([name, data]: [string, any]) => {
-        seen.add(name.toLowerCase());
-        const exp = data.expectedCount ?? data.expected ?? 0;
-        const act = data.actualCount ?? data.actual ?? 0;
-        const mat = data.matchedCount ?? data.matched ?? 0;
-        let st = (data.status || '').toUpperCase();
-        if (st === 'MATCH') st = 'PASS';
-        else if (st === 'MISMATCH') st = 'FAIL';
-        else if (st === 'MISSING_IN_ACTUAL') st = 'MISSING';
-        else if (st === 'EXTRA_IN_ACTUAL') st = 'EXTRA';
-        else if (!st) st = (exp === act && mat === exp) ? 'PASS' : 'FAIL';
-
-        rows.push({
-          schema: name,
-          expected: exp,
-          actual: act,
-          matched: mat,
-          status: st
-        });
-      });
+    if (clsName === 'Export' || clsName === 'ALL') {
+      viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+      return;
     }
 
-    // Merge any other available classes not yet present in rows
-    availableClasses.forEach((clsName) => {
-      if (!seen.has(clsName.toLowerCase())) {
-        const actRecs = getRecordsForClass(actual, clsName);
-        const expRecs = getRecordsForClass(expected, clsName);
-        const actCount = Array.isArray(actRecs) ? actRecs.length : 0;
-        const expCount = Array.isArray(expRecs) ? expRecs.length : 0;
-        let st = 'PASS';
-        if (expCount === 0 && actCount > 0) st = 'EXTRA';
-        else if (expCount > 0 && actCount === 0) st = 'MISSING';
-        else if (expCount !== actCount) st = 'MISMATCH';
+    if (classRowsCache[clsName]) {
+      viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
 
-        rows.push({
-          schema: clsName,
-          expected: expCount,
-          actual: actCount,
-          matched: st === 'PASS' ? actCount : 0,
-          status: st
-        });
-        seen.add(clsName.toLowerCase());
+    if (workflow.runId) {
+      try {
+        const res = await fetch(`${API_URL}/runs/${workflow.runId}/final-output/class/${encodeURIComponent(clsName)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const rows = Array.isArray(data) ? data : (data.rows || data.exportRows || data.data || []);
+          setClassRowsCache(prev => ({ ...prev, [clsName]: rows }));
+        }
+      } catch (e) {
+        console.warn(`Failed to fetch class ${clsName}:`, e);
       }
-    });
+    }
+    viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-    return rows;
-  }, [executionResult, availableClasses, inputs]);
-
-  // 4. Differences
-  const allDiffs = useMemo(() => {
-    if (Array.isArray(executionResult?.comparison?.diffs)) return executionResult.comparison.diffs;
-    if (Array.isArray(executionResult?.differences)) return executionResult.differences;
-    if (Array.isArray(executionResult?.diffs)) return executionResult.diffs;
-    return [];
-  }, [executionResult]);
-
-  const filteredDiffs = useMemo(() => {
-    if (!allDiffs || allDiffs.length === 0) return [];
-    if (selectedClass === 'ALL') return allDiffs;
-    return allDiffs.filter((d: any) => {
-      const s = d.schema || d.schemaname || d.className;
-      return s === selectedClass || (typeof s === 'string' && s.toLowerCase() === selectedClass.toLowerCase());
-    });
-  }, [allDiffs, selectedClass]);
-
-  // 5. Total count
-  const totalActualRecordsCount = useMemo(() => {
-    const act = getRecordsForClass(executionResult?.actualOutput || executionResult?.output, 'ALL');
-    return Array.isArray(act) ? act.length : 0;
-  }, [executionResult]);
-
-  // 6. Current raw and class records
+  // 6. Current records to display in the main output table
   const currentClassActualRecords = useMemo(() => {
+    if (selectedClass === 'Export' || selectedClass === 'ALL') {
+      return exportRows;
+    }
+    if (classRowsCache[selectedClass]) {
+      return classRowsCache[selectedClass];
+    }
     return getRecordsForClass(executionResult?.actualOutput || executionResult?.output, selectedClass);
-  }, [executionResult, selectedClass]);
+  }, [selectedClass, exportRows, classRowsCache, executionResult]);
 
   const currentClassExpectedRecords = useMemo(() => {
     return getRecordsForClass(executionResult?.expectedOutput || inputs?.expectedOutput, selectedClass);
@@ -409,7 +476,24 @@ export const FinalOutputStage: React.FC = () => {
     return currentClassExpectedRecords;
   }, [resultViewerTab, currentClassActualRecords, currentClassExpectedRecords]);
 
-  // 7. Filtered records by search query
+  // Differences
+  const allDiffs = useMemo(() => {
+    if (Array.isArray(executionResult?.comparison?.diffs)) return executionResult.comparison.diffs;
+    if (Array.isArray(executionResult?.differences)) return executionResult.differences;
+    if (Array.isArray(executionResult?.diffs)) return executionResult.diffs;
+    return [];
+  }, [executionResult]);
+
+  const filteredDiffs = useMemo(() => {
+    if (!allDiffs || allDiffs.length === 0) return [];
+    if (selectedClass === 'ALL' || selectedClass === 'Export') return allDiffs;
+    return allDiffs.filter((d: any) => {
+      const s = d.schema || d.schemaname || d.className;
+      return s === selectedClass || (typeof s === 'string' && s.toLowerCase() === selectedClass.toLowerCase());
+    });
+  }, [allDiffs, selectedClass]);
+
+  // Filtered records by search query
   const filteredRecords = useMemo(() => {
     if (!Array.isArray(currentClassRecords)) return [];
     if (!searchQuery.trim()) return currentClassRecords;
@@ -420,14 +504,14 @@ export const FinalOutputStage: React.FC = () => {
     });
   }, [currentClassRecords, searchQuery]);
 
-  // 8. Pagination
+  // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
   const paginatedRecords = useMemo(() => {
     const start = (page - 1) * pageSize;
     return filteredRecords.slice(start, start + pageSize);
   }, [filteredRecords, page, pageSize]);
 
-  // 9. Columns for table view
+  // Columns for table view
   const tableColumns = useMemo(() => {
     if (!Array.isArray(currentClassRecords) || currentClassRecords.length === 0) return [];
     const keys = new Set<string>();
@@ -451,12 +535,6 @@ export const FinalOutputStage: React.FC = () => {
     keys.forEach(k => cols.push(k));
     return cols;
   }, [currentClassRecords]);
-
-  const handleSelectClass = (clsName: string) => {
-    setSelectedClass(clsName);
-    setPage(1);
-    viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   const handleCopyClassOutput = async () => {
     try {
@@ -493,10 +571,21 @@ export const FinalOutputStage: React.FC = () => {
           leftActions={
             <button
               onClick={() => setStage('schema')}
-              className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md transition-colors"
+              className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md transition-colors cursor-pointer"
               title="Back to Schema Studio"
             >
               <ArrowLeft className="h-4 w-4" />
+            </button>
+          }
+          rightActions={
+            <button
+              type="button"
+              onClick={() => executeSchema()}
+              disabled={!isOutputReady || isExecuting}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Run</span>
             </button>
           }
         />
@@ -513,6 +602,15 @@ export const FinalOutputStage: React.FC = () => {
                className="px-4 py-2 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs font-semibold cursor-pointer"
              >
                Go to Schema Studio
+             </button>
+             <button
+               type="button"
+               onClick={() => executeSchema()}
+               disabled={!isOutputReady || isExecuting}
+               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold cursor-pointer shadow-sm flex items-center space-x-1.5"
+             >
+               <Play className="h-3.5 w-3.5 fill-current" />
+               <span>Run</span>
              </button>
              <button
                onClick={() => setIsModalOpen(true)}
@@ -558,7 +656,7 @@ export const FinalOutputStage: React.FC = () => {
         leftActions={
           <button
             onClick={() => setStage('schema')}
-            className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
             title="Back to Schema Studio"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -567,12 +665,21 @@ export const FinalOutputStage: React.FC = () => {
         rightActions={
           <>
             <button
+              type="button"
+              onClick={() => executeSchema()}
+              disabled={isExecuting}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Run</span>
+            </button>
+            <button
               onClick={() => {
                  if (workflow.runId) {
                     window.open(`${API_URL}/schema/${workflow.runId}/download`, '_blank');
                  }
               }}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0"
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Download Schema</span>
@@ -583,7 +690,7 @@ export const FinalOutputStage: React.FC = () => {
                     window.open(`${API_URL}/runs/${workflow.runId}/final-output/download`, '_blank');
                  }
               }}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0"
+              className="flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white dark:bg-white dark:hover:bg-neutral-100 dark:text-neutral-900 font-semibold rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Download results</span>
@@ -616,12 +723,23 @@ export const FinalOutputStage: React.FC = () => {
                  <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                  <h3 className="text-xs font-bold text-neutral-900 dark:text-white">Inputs Used for Execution</h3>
               </div>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-semibold transition-colors"
-              >
-                Change inputs
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => executeSchema()}
+                  disabled={isExecuting}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <Play className="h-3 w-3 fill-current" />
+                  <span>Run</span>
+                </button>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Change inputs
+                </button>
+              </div>
            </div>
            
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -647,6 +765,24 @@ export const FinalOutputStage: React.FC = () => {
               </div>
 
               <div className="space-y-4">
+                 <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Period (forPrdFrom \u2014 forPrdTo)</div>
+                    <div className="flex items-center space-x-2 text-xs">
+                       <input
+                         type="date"
+                         value={forPrdFrom}
+                         onChange={(e) => setForPrdFrom(e.target.value)}
+                         className="px-2 py-1 text-xs rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200"
+                       />
+                       <span className="text-neutral-400">to</span>
+                       <input
+                         type="date"
+                         value={forPrdTo}
+                         onChange={(e) => setForPrdTo(e.target.value)}
+                         className="px-2 py-1 text-xs rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200"
+                       />
+                    </div>
+                 </div>
                  <div className="space-y-1.5">
                     <div className="text-[10px] font-bold text-neutral-500 uppercase">Schema Key</div>
                     <div className="flex items-center space-x-2 text-[11px] font-mono text-neutral-800 dark:text-neutral-200">
@@ -675,11 +811,16 @@ export const FinalOutputStage: React.FC = () => {
                <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                <div className="space-y-1">
                  <h3 className="text-xs font-bold text-rose-800 dark:text-rose-300">Execution Failed</h3>
-                 <p className="text-xs text-rose-700 dark:text-rose-400">{executionError}</p>
-                 {executionResult?.missingDataSources && (
-                    <ul className="list-disc list-inside text-[11px] text-rose-600 pt-1">
-                      {executionResult.missingDataSources.map((d: string, i: number) => <li key={i}>{d} missing</li>)}
-                    </ul>
+                 <p className="text-xs text-rose-700 dark:text-rose-400 font-semibold">{executionError}</p>
+                 {missingRequiredList && missingRequiredList.length > 0 && (
+                    <div className="pt-1.5">
+                      <p className="text-[11px] font-bold text-rose-800 dark:text-rose-300">Required data sources:</p>
+                      <ul className="list-disc list-inside text-[11px] text-rose-600 dark:text-rose-400 pt-0.5 space-y-0.5 font-mono">
+                        {missingRequiredList.map((d: string, i: number) => (
+                          <li key={i}>{d}</li>
+                        ))}
+                      </ul>
+                    </div>
                  )}
                </div>
              </div>
@@ -691,18 +832,18 @@ export const FinalOutputStage: React.FC = () => {
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm overflow-hidden flex flex-col transition-colors">
             {/* Header / Banner */}
             <div className={`px-5 py-4 border-b ${
-                 (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS')
+                 (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS' || executionResult.runStatus?.toUpperCase() === 'COMPLETED')
                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50'
                    : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50'
                } flex flex-col sm:flex-row sm:items-center justify-between gap-4`}
             >
               <div className="flex items-center space-x-3">
                  <h2 className={`text-sm font-bold ${
-                   (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS')
+                   (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS' || executionResult.runStatus?.toUpperCase() === 'COMPLETED')
                      ? 'text-emerald-800 dark:text-emerald-400'
                      : 'text-rose-800 dark:text-rose-400'
                  }`}>
-                   {executionResult.evaluationResult || executionResult.status || 'UNKNOWN'}
+                   {executionResult.evaluationResult || executionResult.status || executionResult.runStatus || 'COMPLETED'}
                  </h2>
                  {executionResult.duration && (
                     <span className="text-[10px] font-mono text-neutral-500 opacity-80">
@@ -718,18 +859,18 @@ export const FinalOutputStage: React.FC = () => {
             </div>
 
             <div className="p-5 space-y-6">
-              {/* 1. Class-Wise Output Evaluation Table */}
-              {classComparisons.length > 0 && (
+              {/* 1. Run Report Table: columns Class, Status, Rows, Notes / Error */}
+              {runReport.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                        Class-Wise Output Evaluation
+                        Run Report
                       </h4>
                     </div>
                     <span className="text-[10px] text-neutral-500 font-medium">
-                      {classComparisons.length} {classComparisons.length === 1 ? 'class' : 'classes'} evaluated
+                      {runReport.length} {runReport.length === 1 ? 'class' : 'classes'} evaluated
                     </span>
                   </div>
 
@@ -737,27 +878,28 @@ export const FinalOutputStage: React.FC = () => {
                     <table className="w-full text-left">
                       <thead className="bg-neutral-50 dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-400 font-semibold uppercase tracking-wider text-[10px]">
                         <tr>
-                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60">Class / Schema</th>
-                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-right">Expected</th>
-                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-right">Actual</th>
-                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-right">Matched</th>
+                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60">Class</th>
                           <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-center">Status</th>
+                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-right">Rows</th>
+                          <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60">Notes / Error</th>
                           <th className="p-3 border-b border-neutral-200 dark:border-neutral-700/60 text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300">
-                        {classComparisons.map((row: any, i: number) => {
-                          const isPass = row.status === 'PASS';
-                          const isFail = row.status === 'FAIL' || row.status === 'MISMATCH';
-                          const isSelected = selectedClass === row.schema;
+                        {runReport.map((row: any, i: number) => {
+                          const isOk = row.status === 'OK';
+                          const isEmpty = row.status === 'EMPTY';
+                          const isFailed = row.status === 'FAILED';
+                          const isSelected = selectedClass === row.className;
                           return (
                             <tr 
                               key={i} 
-                              className={`transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/50 ${isSelected ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''}`}
+                              onClick={() => handleSelectClass(row.className)}
+                              className={`transition-colors hover:bg-neutral-50/80 dark:hover:bg-neutral-800/50 cursor-pointer ${isSelected ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''}`}
                             >
                               <td className="p-3">
                                 <div className="flex items-center space-x-2">
-                                  <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">{row.schema}</span>
+                                  <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">{row.className}</span>
                                   {isSelected && (
                                     <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 rounded text-[9px] font-bold">
                                       Active
@@ -765,30 +907,30 @@ export const FinalOutputStage: React.FC = () => {
                                   )}
                                 </div>
                               </td>
-                              <td className="p-3 text-right font-mono font-medium text-neutral-600 dark:text-neutral-400">
-                                {Number(row.expected).toLocaleString()}
-                              </td>
-                              <td className="p-3 text-right font-mono font-semibold text-neutral-900 dark:text-neutral-100">
-                                {Number(row.actual).toLocaleString()}
-                              </td>
-                              <td className="p-3 text-right font-mono font-medium text-neutral-600 dark:text-neutral-400">
-                                {Number(row.matched).toLocaleString()}
-                              </td>
                               <td className="p-3 text-center">
                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                  isPass 
+                                  isOk 
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60'
-                                    : isFail
-                                    ? 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60'
-                                    : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60'
+                                    : isEmpty
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60'
                                 }`}>
                                   {row.status}
                                 </span>
                               </td>
+                              <td className="p-3 text-right font-mono font-semibold text-neutral-900 dark:text-neutral-100">
+                                {Number(row.rows).toLocaleString()}
+                              </td>
+                              <td className="p-3 text-xs text-neutral-600 dark:text-neutral-400 truncate max-w-xs font-mono" title={row.notes}>
+                                {row.notes || '-'}
+                              </td>
                               <td className="p-3 text-center">
                                 <button
                                   type="button"
-                                  onClick={() => handleSelectClass(row.schema)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectClass(row.className);
+                                  }}
                                   className="inline-flex items-center space-x-1 px-2.5 py-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60 rounded-md transition-colors cursor-pointer"
                                 >
                                   <Eye className="h-3 w-3" />
@@ -804,24 +946,24 @@ export const FinalOutputStage: React.FC = () => {
                 </div>
               )}
 
-              {/* 2. Differences Section */}
+              {/* Differences Section */}
               {((executionResult.evaluationResult?.toUpperCase() === 'FAIL' || executionResult.status?.toUpperCase() === 'FAIL') && (filteredDiffs.length > 0 || executionResult.differences)) && (
                 <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-xl p-4 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
                       <AlertCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                       <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300 uppercase tracking-wider">
-                        Differences {selectedClass !== 'ALL' ? `(${selectedClass})` : `(${filteredDiffs.length || 'Detected'})`}
+                        Differences {selectedClass !== 'ALL' && selectedClass !== 'Export' ? `(${selectedClass})` : `(${filteredDiffs.length || 'Detected'})`}
                       </h4>
                     </div>
                     <div className="flex items-center space-x-3 text-[11px]">
-                      {selectedClass !== 'ALL' && (
+                      {selectedClass !== 'ALL' && selectedClass !== 'Export' && (
                         <button
                           type="button"
-                          onClick={() => handleSelectClass('ALL')}
+                          onClick={() => handleSelectClass('Export')}
                           className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200 underline cursor-pointer"
                         >
-                          View all class diffs
+                          View export diffs
                         </button>
                       )}
                       {filteredDiffs.length > 25 && (
@@ -845,17 +987,17 @@ export const FinalOutputStage: React.FC = () => {
                 </div>
               )}
 
-              {/* 3. Class Output Explorer */}
+              {/* 2. Output Table Explorer (shows exportRows by default, or selected class rows) */}
               <div ref={viewerSectionRef} className="space-y-3 pt-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
                     <Database className="h-4 w-4 text-neutral-700 dark:text-neutral-300" />
                     <div>
                       <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                        Class Output Explorer
+                        Output Table {selectedClass ? `(${selectedClass})` : ''}
                       </h4>
                       <p className="text-[10px] text-neutral-500">
-                        Filter and inspect records per class in table or raw JSON format
+                        Filter and inspect records in table or raw JSON format
                       </p>
                     </div>
                   </div>
@@ -864,34 +1006,33 @@ export const FinalOutputStage: React.FC = () => {
                 {/* Class Selection Pills */}
                 <div className="flex flex-wrap items-center gap-1.5 p-2 bg-neutral-100/70 dark:bg-neutral-800/50 rounded-xl border border-neutral-200/80 dark:border-neutral-700/60">
                   <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider pl-1 pr-2 flex items-center space-x-1">
-                    <span>Classes:</span>
+                    <span>View:</span>
                   </span>
 
-                  {/* ALL Classes Pill */}
+                  {/* Export Class Pill */}
                   <button
                     type="button"
-                    onClick={() => handleSelectClass('ALL')}
+                    onClick={() => handleSelectClass('Export')}
                     className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
-                      selectedClass === 'ALL'
+                      selectedClass === 'Export'
                         ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20'
                         : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700/80 border border-neutral-200 dark:border-neutral-700'
                     }`}
                   >
-                    <span>All Classes</span>
+                    <span>Export Rows</span>
                     <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                      selectedClass === 'ALL'
+                      selectedClass === 'Export'
                         ? 'bg-blue-700 text-white'
                         : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
                     }`}>
-                      {totalActualRecordsCount}
+                      {exportRows.length}
                     </span>
                   </button>
 
-                  {/* Individual Class Pills */}
+                  {/* Individual Class Pills from Run Report */}
                   {availableClasses.map((clsName) => {
-                    const actRecs = getRecordsForClass(executionResult?.actualOutput || executionResult?.output, clsName);
-                    const count = Array.isArray(actRecs) ? actRecs.length : 0;
-                    const comp = classComparisons.find(c => c.schema.toLowerCase() === clsName.toLowerCase());
+                    const repItem = runReport.find(r => r.className.toLowerCase() === clsName.toLowerCase());
+                    const count = repItem?.rows ?? 0;
                     const isSelected = selectedClass === clsName;
 
                     return (
@@ -913,8 +1054,8 @@ export const FinalOutputStage: React.FC = () => {
                         }`}>
                           {count}
                         </span>
-                        {comp && comp.status !== 'PASS' && (
-                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-rose-500'}`} title={`Status: ${comp.status}`} />
+                        {repItem && repItem.status === 'FAILED' && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-rose-500'}`} title="Status: FAILED" />
                         )}
                       </button>
                     );
@@ -936,26 +1077,28 @@ export const FinalOutputStage: React.FC = () => {
                             : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200'
                         }`}
                       >
-                        <span>Actual Output</span>
+                        <span>{selectedClass === 'Export' ? 'Export Rows' : `${selectedClass} Output`}</span>
                         <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
                           {currentClassActualRecords.length}
                         </span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => { setResultViewerTab('expected'); setPage(1); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1.5 cursor-pointer ${
-                          resultViewerTab === 'expected'
-                            ? 'bg-white dark:bg-neutral-900 text-blue-600 dark:text-blue-400 shadow-sm border border-neutral-200/80 dark:border-neutral-700'
-                            : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200'
-                        }`}
-                      >
-                        <span>Expected Output</span>
-                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
-                          {currentClassExpectedRecords.length}
-                        </span>
-                      </button>
+                      {currentClassExpectedRecords.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { setResultViewerTab('expected'); setPage(1); }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1.5 cursor-pointer ${
+                            resultViewerTab === 'expected'
+                              ? 'bg-white dark:bg-neutral-900 text-blue-600 dark:text-blue-400 shadow-sm border border-neutral-200/80 dark:border-neutral-700'
+                              : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200'
+                          }`}
+                        >
+                          <span>Expected Output</span>
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
+                            {currentClassExpectedRecords.length}
+                          </span>
+                        </button>
+                      )}
 
                       {filteredDiffs.length > 0 && (
                         <button
@@ -991,7 +1134,7 @@ export const FinalOutputStage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => { setSearchQuery(''); setPage(1); }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -1065,7 +1208,7 @@ export const FinalOutputStage: React.FC = () => {
                           <div className="p-10 text-center text-neutral-500 dark:text-neutral-400 space-y-2">
                             <FileText className="h-8 w-8 mx-auto text-neutral-400 dark:text-neutral-600 opacity-60" />
                             <p className="text-xs font-semibold">
-                              No records found for class &quot;{selectedClass}&quot;
+                              No records found for &quot;{selectedClass}&quot;
                               {searchQuery ? ` matching "${searchQuery}"` : ''}
                             </p>
                             <p className="text-[11px] text-neutral-400">

@@ -156,6 +156,10 @@ export function pollOperation(
           const mismatches = statusData.mismatches || statusData.result?.mismatches;
           const errorMsg = statusData.error || statusData.message || 'Operation failed';
           const error = new OperationFailedError(errorMsg, mismatches);
+          (error as any).stage = statusData.stage || statusData.result?.stage;
+          (error as any).missing = statusData.missing || statusData.missingDataSources || statusData.result?.missing || statusData.result?.missingDataSources;
+          (error as any).required = statusData.required || statusData.requiredDataSources || statusData.result?.required || statusData.result?.requiredDataSources;
+          (error as any).statusData = statusData;
           reject(error);
           return;
         }

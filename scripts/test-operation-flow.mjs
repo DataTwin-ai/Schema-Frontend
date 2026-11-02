@@ -288,3 +288,4 @@ assert.strictEqual(
 console.log('[PASS] Empty state accurately distinguishes completed generation with no files');
 
 console.log('\n=== All Tests Passed Successfully! ===');
+
