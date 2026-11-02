@@ -45,13 +45,69 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function isGenericTitle(msg?: string): boolean {
+  if (!msg) return true;
+  const m = msg.trim().toLowerCase();
+  return (
+    m === 'generating domain classes...' ||
+    m === 'generating domain classes\u2026' ||
+    m === 'generating domain classes' ||
+    m === 'generating requirements...' ||
+    m === 'generating requirements\u2026' ||
+    m === 'generating requirements' ||
+    m === 'generating business requirement...' ||
+    m === 'generating business requirement\u2026' ||
+    m === 'generating business requirement' ||
+    m === 'generating schema...' ||
+    m === 'generating schema\u2026' ||
+    m === 'generating schema' ||
+    m === 'generating schema classes...' ||
+    m === 'generating schema classes\u2026' ||
+    m === 'executing schema...' ||
+    m === 'executing schema' ||
+    m === 'generating...' ||
+    m === 'generating\u2026' ||
+    m === 'processing...' ||
+    m === 'processing\u2026'
+  );
+}
+
 /**
- * Build human-readable phase text and "current of total" step count.
- * Example: "Generating class prompts \u00B7 6 of 6"
+ * Build human-readable server message or step count under the bar.
+ * Example: "Class 7/15: GSTR9C_Table5_6"
  */
 function buildPhaseAndCount(rawProgress: unknown, activeOp?: any): string | null {
   const p = (rawProgress && typeof rawProgress === 'object') ? (rawProgress as Record<string, unknown>) : {};
 
+  // 1. Show the server's message ("Class 7/15: GSTR9C_Table5_6") instead of raw phase name
+  const serverMsg =
+    (typeof p.message === 'string' && p.message && !isGenericTitle(p.message)) ? p.message :
+    (activeOp && typeof activeOp.message === 'string' && activeOp.message && !isGenericTitle(activeOp.message)) ? activeOp.message :
+    null;
+
+  if (serverMsg) {
+    return serverMsg;
+  }
+
+  // 2. Format class-wise progress if current, total, and class name exist
+  const current = typeof p.current === 'number' ? p.current : (typeof activeOp?.current === 'number' ? activeOp.current : undefined);
+  const total   = typeof p.total   === 'number' ? p.total   : (typeof activeOp?.total   === 'number' ? activeOp.total   : undefined);
+  const currentName =
+    typeof p.currentName === 'string' ? p.currentName :
+    typeof p.current_name === 'string' ? p.current_name :
+    typeof p.className === 'string' ? p.className :
+    typeof p.class_name === 'string' ? p.class_name :
+    typeof activeOp?.currentName === 'string' ? activeOp.currentName :
+    null;
+
+  if (current !== undefined && total !== undefined && (total as number) > 0) {
+    if (currentName) {
+      return `Class ${current}/${total}: ${currentName}`;
+    }
+    return `${current} of ${total}`;
+  }
+
+  // 3. Fallback to phase
   const phase: string | null =
     (activeOp && typeof activeOp.phase === 'string' && activeOp.phase) ? activeOp.phase :
     (typeof p.phase === 'string' && p.phase) ? p.phase :
@@ -61,20 +117,7 @@ function buildPhaseAndCount(rawProgress: unknown, activeOp?: any): string | null
     (typeof p.message === 'string' && p.message) ? p.message :
     null;
 
-  const current = typeof p.current === 'number' ? p.current : undefined;
-  const total   = typeof p.total   === 'number' ? p.total   : undefined;
-  let countStr: string | null = null;
-  if (current !== undefined && total !== undefined && (total as number) > 0) {
-    const currentName = typeof p.currentName === 'string' ? p.currentName : typeof p.current_name === 'string' ? p.current_name : null;
-    countStr = currentName ? `${current} of ${total}: ${currentName}` : `${current} of ${total}`;
-  }
-
-  if (phase && countStr) {
-    return `${phase} \u00B7 ${countStr}`;
-  }
-  if (phase) return phase;
-  if (countStr) return countStr;
-  return null;
+  return phase;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,10 +204,10 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   // Derived display values
   // ---------------------------------------------------------------------------
 
-  const currentStatus = activeOperation?.status || 'RUNNING';
+  const currentStatus: string = (activeOperation as any)?.status || 'RUNNING';
   const isRunningLike = ['RUNNING', 'PAUSE_REQUESTED', 'PAUSED', 'RESUME_REQUESTED'].includes(currentStatus);
   const isStopRequested = currentStatus === 'STOP_REQUESTED';
-  const isCompleted = currentStatus === 'COMPLETED';
+  const isCompleted = currentStatus === 'COMPLETED' || currentStatus === 'COMPLETED_WITH_ERRORS';
   const showProgressBar = isRunningLike || isStopRequested || isCompleted;
 
   const rawProgress = activeOperation?.progress;
@@ -232,7 +275,9 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
   const getStatusIcon = () => {
     switch (currentStatus) {
       case 'FAILED':    return <AlertCircle className="h-6 w-6 text-rose-500 mb-4" />;
-      case 'COMPLETED': return <CheckCircle  className="h-6 w-6 text-emerald-500 mb-4" />;
+      case 'COMPLETED':
+      case 'COMPLETED_WITH_ERRORS':
+        return <CheckCircle  className="h-6 w-6 text-emerald-500 mb-4" />;
       case 'STOPPED':   return <Square       className="h-6 w-6 text-neutral-500 mb-4" />;
       case 'PAUSED':    return <Pause        className="h-6 w-6 text-amber-500 mb-4" />;
       default:          return <Loader2      className="h-6 w-6 text-neutral-700 dark:text-neutral-300 animate-spin stroke-[2.25] mb-4" />;
@@ -342,6 +387,7 @@ export const GenerationProcessingModal: React.FC<GenerationProcessingModalProps>
         );
 
       case 'COMPLETED':
+      case 'COMPLETED_WITH_ERRORS':
         return null;
       default:
         return null;

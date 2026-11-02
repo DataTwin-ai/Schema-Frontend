@@ -41,23 +41,32 @@ export class ApiSchemaGenerationService implements ISchemaGenerationService {
 
       const statusData = await pollOperation(operationId, onProgress, onStatusUpdate);
 
+      let schemaData: any = null;
       if (runId) {
         try {
           const res = await fetch(`${API_URL}/schema/${runId}`);
           if (res.ok) {
-            const schemaData = await res.json();
-            if (onProgress) {
-              onProgress({ id: 'schema-done', status: 'done', label: 'Schema generated successfully' });
-            }
-            return schemaData;
+            schemaData = await res.json();
           }
         } catch (e) {
           console.warn('Failed to load schema from GET /api/schema/{runId}:', e);
         }
       }
 
-      const rawSchema = statusData.schema || statusData.result || statusData;
-      return this.buildSchemaModel(rawSchema, classes);
+      if (!schemaData) {
+        const rawSchema = statusData.schema || statusData.result || statusData;
+        schemaData = this.buildSchemaModel(rawSchema, classes);
+      }
+
+      if (onProgress) {
+        onProgress({ id: 'schema-done', status: 'done', label: 'Schema generated successfully' });
+      }
+
+      if (schemaData) {
+        schemaData.status = statusData.status;
+        schemaData.missingClasses = statusData.missingClasses || statusData.missing_classes || statusData.result?.missingClasses;
+      }
+      return schemaData;
     }
 
     if (runId) {

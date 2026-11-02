@@ -1,6 +1,33 @@
 import { API_URL } from './config';
 import { ProgressCallback } from '../interfaces';
 
+function isGenericTitle(msg?: string): boolean {
+  if (!msg) return true;
+  const m = msg.trim().toLowerCase();
+  return (
+    m === 'generating domain classes...' ||
+    m === 'generating domain classes\u2026' ||
+    m === 'generating domain classes' ||
+    m === 'generating requirements...' ||
+    m === 'generating requirements\u2026' ||
+    m === 'generating requirements' ||
+    m === 'generating business requirement...' ||
+    m === 'generating business requirement\u2026' ||
+    m === 'generating business requirement' ||
+    m === 'generating schema...' ||
+    m === 'generating schema\u2026' ||
+    m === 'generating schema' ||
+    m === 'generating schema classes...' ||
+    m === 'generating schema classes\u2026' ||
+    m === 'executing schema...' ||
+    m === 'executing schema' ||
+    m === 'generating...' ||
+    m === 'generating\u2026' ||
+    m === 'processing...' ||
+    m === 'processing\u2026'
+  );
+}
+
 export class StoppedError extends Error {
   constructor(message?: string) {
     super(message || 'Generation stopped');
@@ -102,22 +129,39 @@ export function pollOperation(
         }
 
         if (onProgress) {
-          const phase =
-            statusData.phase ||
-            statusData.progress?.phase ||
-            statusData.progress?.phaseLabel ||
-            statusData.progress?.phase_label ||
-            statusData.message ||
-            `Processing... (${statusData.status})`;
-          const progressInfo = statusData.progress;
-          let detail = '';
-          if (progressInfo && typeof progressInfo.current === 'number' && typeof progressInfo.total === 'number') {
-            detail = `${progressInfo.current} of ${progressInfo.total}`;
+          const current = statusData.progress?.current ?? statusData.current;
+          const total = statusData.progress?.total ?? statusData.total;
+          const currentName =
+            statusData.progress?.currentName ||
+            statusData.progress?.current_name ||
+            statusData.progress?.className ||
+            statusData.progress?.class_name ||
+            statusData.currentName ||
+            statusData.className;
+
+          let serverMessage = statusData.message;
+          if (!serverMessage || isGenericTitle(serverMessage)) {
+            if (current !== undefined && total !== undefined && total > 0 && currentName) {
+              serverMessage = `Class ${current}/${total}: ${currentName}`;
+            } else {
+              serverMessage =
+                statusData.phase ||
+                statusData.progress?.phase ||
+                statusData.progress?.phaseLabel ||
+                statusData.progress?.phase_label ||
+                `Processing... (${statusData.status})`;
+            }
           }
+
+          let detail = '';
+          if (typeof current === 'number' && typeof total === 'number') {
+            detail = `${current} of ${total}`;
+          }
+
           onProgress({
             id: `poll-progress-${operationId}`,
             status: 'active',
-            label: phase,
+            label: serverMessage,
             detail: detail,
           });
         }
@@ -142,7 +186,7 @@ export function pollOperation(
           activePolls.delete(operationId);
         }
 
-        if (status === 'COMPLETED' || status === 'AWAITING_APPROVAL') {
+        if (status === 'COMPLETED' || status === 'COMPLETED_WITH_ERRORS' || status === 'AWAITING_APPROVAL') {
           resolve(statusData);
           return;
         }

@@ -34,7 +34,12 @@ export class ApiClassGenerationService implements IClassGenerationService {
 
     if (!response.ok) {
       if (response.status === 409) {
-        throw new Error("Another generation is running");
+        let errJson: any = {};
+        try { errJson = await response.json(); } catch (_) {}
+        const err: any = new Error(errJson.detail || "Another generation is running");
+        err.status = 409;
+        err.classPlan = errJson.classPlan || errJson.plan;
+        throw err;
       }
       throw new Error(`Failed to generate classes: ${response.statusText}`);
     }
@@ -81,6 +86,8 @@ export class ApiClassGenerationService implements IClassGenerationService {
 
       const mapped = this.mapClasses(rawClasses);
       (mapped as any).count = statusData.count ?? statusData.result?.count ?? mapped.length;
+      (mapped as any).status = statusData.status;
+      (mapped as any).missingClasses = statusData.missingClasses || statusData.missing_classes || statusData.result?.missingClasses;
       return mapped;
     }
 

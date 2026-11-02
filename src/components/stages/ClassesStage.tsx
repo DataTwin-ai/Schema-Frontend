@@ -793,11 +793,23 @@ export const ClassesStage: React.FC = () => {
         updatedAt: new Date().toISOString(),
       }));
       setIsGeneratingModalOpen(false);
-      showToast(`Generated ${count} classes successfully`, 'success');
+      const missingClasses = statusData?.missingClasses || statusData?.missing_classes || statusData?.result?.missingClasses || [];
+      if (statusData?.status === 'COMPLETED_WITH_ERRORS' || (Array.isArray(missingClasses) && missingClasses.length > 0)) {
+        const missingList = Array.isArray(missingClasses) ? missingClasses.join(', ') : missingClasses;
+        showToast(`Completed with errors. Missing classes: ${missingList}`, 'info');
+      } else {
+        showToast(`Generated ${count} classes successfully`, 'success');
+      }
     } catch (err: any) {
       setIsGeneratingModalOpen(false);
       if (err.name === 'StoppedError') {
         showToast("Generation stopped", 'info');
+        setWorkflow((prev) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: 'Generation stopped'
+        }));
         setActiveOperation(null);
       } else if (err.name === 'UnknownStatusError') {
         showToast(`Unknown operation status: ${err.rawStatus || err.message}`, 'error');

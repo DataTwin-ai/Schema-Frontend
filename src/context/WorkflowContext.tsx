@@ -110,9 +110,9 @@ interface WorkflowContextValue {
   activeOperation: {
     operationId: string;
     type: string;
-    status: 'RUNNING' | 'PAUSE_REQUESTED' | 'PAUSED' | 'RESUME_REQUESTED' | 'STOP_REQUESTED' | 'STOPPED' | 'COMPLETED' | 'FAILED';
+    status: 'RUNNING' | 'PAUSE_REQUESTED' | 'PAUSED' | 'RESUME_REQUESTED' | 'STOP_REQUESTED' | 'STOPPED' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED' | string;
     message?: string;
-    progress?: number;
+    progress?: any;
     error?: string;
   } | null;
   setActiveOperation: (op: any) => void;
@@ -1384,26 +1384,61 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
 
       const classList = Array.isArray(result) ? result : ((result as any)?.classes || []);
       const count = (result as any)?.count ?? classList.length;
+      const missingClasses = (result as any)?.missingClasses || (result as any)?.missing_classes || [];
 
       setWorkflow((prev: SchemaGenerationWorkflow) => ({
         ...prev,
         classes: classList,
         stage: 'classes',
         generationStatus: 'completed',
+        classPlanStatus: 'APPROVED',
         updatedAt: new Date().toISOString(),
       }));
       setIsGeneratingModalOpen(false);
-      showToast(`Generated ${count} classes successfully`, 'success');
+
+      if ((result as any)?.status === 'COMPLETED_WITH_ERRORS' || (Array.isArray(missingClasses) && missingClasses.length > 0)) {
+        const missingList = Array.isArray(missingClasses) ? missingClasses.join(', ') : missingClasses;
+        showToast(`Completed with errors. Missing classes: ${missingList}`, 'info');
+      } else {
+        showToast(`Generated ${count} classes successfully`, 'success');
+      }
     } catch (err: any) {
       console.error(err);
       setIsGeneratingModalOpen(false);
+      if (err.status === 409 && err.classPlan) {
+        const normalized = normalizeClassPlanData(err.classPlan, 'generated');
+        setClassPlanData(normalized);
+        setIsClassPlanModalOpen(true);
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          classPlan: err.classPlan,
+          classPlanStatus: 'PENDING_APPROVAL',
+          generationStatus: 'idle',
+          classPlanText: normalized.text,
+          classPlanVersion: normalized.version,
+          classPlanSource: normalized.source,
+        }));
+        return;
+      }
       if (err.message === "Another generation is running") {
         showToast("Another generation is running", 'error');
       } else if (err.name === 'StoppedError') {
         showToast("Generation stopped", 'info');
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: 'Generation stopped'
+        }));
         setActiveOperation(null);
       } else if (err.name === 'UnknownStatusError') {
         showToast(`Unknown operation status: ${err.rawStatus || err.message}`, 'error');
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: `Unknown operation status: ${err.rawStatus || err.message}`
+        }));
         setActiveOperation(null);
       } else {
         showToast(err.message || 'Failed to generate classes', 'error');
@@ -1476,7 +1511,14 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
       }));
       setEditedSchemaJson(result.rawJson);
       setIsGeneratingModalOpen(false);
-      showToast('Schema generated successfully', 'success');
+
+      const missingClasses = (result as any)?.missingClasses || (result as any)?.missing_classes || [];
+      if ((result as any)?.status === 'COMPLETED_WITH_ERRORS' || (Array.isArray(missingClasses) && missingClasses.length > 0)) {
+        const missingList = Array.isArray(missingClasses) ? missingClasses.join(', ') : missingClasses;
+        showToast(`Schema generated with errors. Missing classes: ${missingList}`, 'info');
+      } else {
+        showToast('Schema generated successfully', 'success');
+      }
     } catch (err: any) {
       console.error(err);
       setIsGeneratingModalOpen(false);
@@ -1484,13 +1526,30 @@ const updateBusinessInput = useCallback((updates: Partial<BusinessInput>) => {
         showToast("Another generation is running", 'error');
       } else if (err.name === 'StoppedError') {
         showToast("Generation stopped", 'info');
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: 'Generation stopped'
+        }));
         setActiveOperation(null);
       } else if (err.name === 'UnknownStatusError') {
         showToast(`Unknown operation status: ${err.rawStatus || err.message}`, 'error');
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: `Unknown operation status: ${err.rawStatus || err.message}`
+        }));
         setActiveOperation(null);
       } else {
         showToast(err.message || 'Failed to generate schema', 'error');
-        setWorkflow((prev: SchemaGenerationWorkflow) => ({ ...prev, generationStatus: 'error', runStatus: 'FAILED' }));
+        setWorkflow((prev: SchemaGenerationWorkflow) => ({
+          ...prev,
+          generationStatus: 'error',
+          runStatus: 'FAILED',
+          lastError: err.message
+        }));
         setActiveOperation((prev: any) => prev ? { ...prev, status: 'FAILED', error: err.message } : null);
       }
     }

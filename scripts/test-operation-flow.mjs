@@ -287,5 +287,45 @@ assert.strictEqual(
 );
 console.log('[PASS] Empty state accurately distinguishes completed generation with no files');
 
+// 9. Test COMPLETED_WITH_ERRORS status path
+console.log('\n--- Test 9: RUNNING -> COMPLETED_WITH_ERRORS path ---');
+progressUpdates = [];
+statusUpdates = [];
+mockResponses = [
+  {
+    ok: true,
+    data: {
+      operationId: 'op-cwe',
+      status: 'RUNNING',
+      message: 'Class 7/15: GSTR9C_Table5_6',
+      progress: { current: 7, total: 15, currentName: 'GSTR9C_Table5_6' },
+      updatedAt: '2026-11-01T20:00:10Z'
+    }
+  },
+  {
+    ok: true,
+    data: {
+      operationId: 'op-cwe',
+      status: 'COMPLETED_WITH_ERRORS',
+      missingClasses: ['Class_14', 'Class_15'],
+      classes: [{ className: 'Class_1' }],
+      count: 13,
+      updatedAt: '2026-11-01T20:00:11Z'
+    }
+  }
+];
+
+const resCwe = await pollOperation(
+  'op-cwe',
+  (prog) => progressUpdates.push(prog),
+  (stat) => statusUpdates.push(stat),
+  50
+);
+
+assert.strictEqual(resCwe.status, 'COMPLETED_WITH_ERRORS', 'Should resolve on COMPLETED_WITH_ERRORS');
+assert.strictEqual(progressUpdates[0].label, 'Class 7/15: GSTR9C_Table5_6', 'Should show server message under bar');
+assert.deepStrictEqual(resCwe.missingClasses, ['Class_14', 'Class_15'], 'Should retain missingClasses');
+console.log('[PASS] COMPLETED_WITH_ERRORS resolves with missingClasses, shows "Class 7/15: GSTR9C_Table5_6"');
+
 console.log('\n=== All Tests Passed Successfully! ===');
 
