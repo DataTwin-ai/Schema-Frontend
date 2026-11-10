@@ -73,13 +73,31 @@ export const BusinessInputStage: React.FC = () => {
     setIsKnowledgeLoading(true);
     setKnowledgeError(null);
     try {
-      const response = await fetch(`${API_URL}/generate/hlr-knowledge`);
-      if (!response.ok) {
-        throw new Error(`Failed to load knowledge file: ${response.statusText}`);
+      const candidates = [
+        `${API_URL}/generate/hlr-knowledge`,
+        `http://localhost:8000/api/generate/hlr-knowledge`,
+        `http://127.0.0.1:8000/api/generate/hlr-knowledge`,
+        `/api/generate/hlr-knowledge`,
+      ];
+      let res: Response | null = null;
+      let lastErr: any = null;
+      for (const u of candidates) {
+        try {
+          const r = await fetch(u);
+          if (r.ok) {
+            res = r;
+            break;
+          }
+        } catch (e) {
+          lastErr = e;
+        }
       }
-      const data = await response.json();
+      if (!res || !res.ok) {
+        throw lastErr || new Error('Backend server is not responding. Please make sure the backend server is running on port 8000.');
+      }
+      const data = await res.json();
       setKnowledgeData({
-        filename: data.filename || data.name || 'knowledge_file.txt',
+        filename: data.filename || data.name || 'knowledge.txt',
         content: data.content || data.text || ''
       });
     } catch (err: any) {
@@ -363,9 +381,19 @@ export const BusinessInputStage: React.FC = () => {
                   <span className="text-xs">Loading knowledge file...</span>
                 </div>
               ) : knowledgeError ? (
-                <div className="flex flex-col items-center justify-center h-48 text-red-500">
-                  <AlertCircle className="h-6 w-6 mb-2" />
-                  <span className="text-xs">{knowledgeError}</span>
+                <div className="flex flex-col items-center justify-center h-48 text-red-500 space-y-2">
+                  <AlertCircle className="h-6 w-6 mb-1" />
+                  <span className="text-xs text-center max-w-md">{knowledgeError}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKnowledgeData(null);
+                      fetchKnowledgeData();
+                    }}
+                    className="px-3 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 rounded text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : knowledgeData ? (
                 <div className="space-y-3">

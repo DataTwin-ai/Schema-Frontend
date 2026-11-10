@@ -973,7 +973,7 @@ if (isLoading) {
         onClose={() => setIsFinalOutputModalOpen(false)}
         initialInputs={workflow.finalOutputInputs}
         onRun={(inputs) => {
-          updateWorkflowField('finalOutputInputs', inputs);
+          updateWorkflowField('finalOutputInputs', { ...inputs, autoRunTriggeredAt: Date.now() });
           setIsFinalOutputModalOpen(false);
           setStage('output');
         }}

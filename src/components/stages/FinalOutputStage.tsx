@@ -22,7 +22,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  FileText
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { StageActionBar } from '../layout/StageActionBar';
 import { SaveDraftButton } from '../common/SaveDraftButton';
@@ -60,10 +61,96 @@ export const FinalOutputStage: React.FC = () => {
   const [isExecuting, setIsExecuting] = useState(false);
   const executionLockRef = useRef<boolean>(false);
   const autoTriggeredRef = useRef<boolean>(false);
+  const lastExecutedAutoRunRef = useRef<number | null>(null);
 
   // Date inputs
   const [forPrdFrom, setForPrdFrom] = useState<string>('2025-04-01');
   const [forPrdTo, setForPrdTo] = useState<string>('2026-03-31');
+
+  // Case Folder input state
+  // Dynamic inputs data from GET /api/runs/{runId}/final-output/inputs
+  const [inputsData, setInputsData] = useState<any>(null);
+  const [loadingInputs, setLoadingInputs] = useState<boolean>(false);
+
+  // Table Explorer state: activeTableType ('output' | 'input')
+  const [activeTableType, setActiveTableType] = useState<'output' | 'input'>('output');
+  const [selectedInputSource, setSelectedInputSource] = useState<string>('');
+  const [inputDataCache, setInputDataCache] = useState<Record<string, { columns: string[]; rows: any[]; totalRows: number }>>({});
+  const [isLoadingInputData, setIsLoadingInputData] = useState<boolean>(false);
+
+  const [caseDirInput, setCaseDirInput] = useState<string>(workflow.caseDir || '');
+
+  // Keep local caseDir input in sync with workflow.caseDir
+  useEffect(() => {
+    if (workflow.caseDir) {
+      setCaseDirInput(workflow.caseDir);
+    }
+  }, [workflow.caseDir]);
+
+  // Sync caseDir from backend if not set or when runId changes
+  useEffect(() => {
+    if (!workflow.runId) return;
+    let isMounted = true;
+    fetch(`${API_URL}/runs/${workflow.runId}/manifest`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data) return;
+        const beCaseDir = data.caseDir || data.case_dir;
+        if (beCaseDir) {
+          setCaseDirInput(beCaseDir);
+          if (workflow.caseDir !== beCaseDir) {
+            updateWorkflowField('caseDir', beCaseDir);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [workflow.runId, updateWorkflowField, workflow.caseDir]);
+
+  const handleCaseDirChange = (val: string) => {
+    setCaseDirInput(val);
+    updateWorkflowField('caseDir', val);
+  };
+
+
+  const loadInputs = async () => {
+    const rId = workflow.runId || 'default';
+    try {
+      setLoadingInputs(true);
+      const res = await fetch(`${API_URL}/runs/${rId}/final-output/inputs`);
+      if (res.ok) {
+        const data = await res.json();
+        setInputsData(data);
+        if (data.forPrdFrom) setForPrdFrom(data.forPrdFrom);
+        if (data.forPrdTo) setForPrdTo(data.forPrdTo);
+        if (data.caseDir && !caseDirInput) setCaseDirInput(data.caseDir);
+      }
+    } catch (e) {
+      console.warn('Failed to load final-output inputs:', e);
+    } finally {
+      setLoadingInputs(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInputs();
+  }, [workflow.runId]);
+
+  const handleCaseDirBlur = async () => {
+    if (!workflow.runId) return;
+    try {
+      await fetch(`${API_URL}/runs/${workflow.runId}/case-dir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseDir: caseDirInput }),
+      });
+      loadInputs();
+    } catch (e) {
+      console.warn('Failed to update caseDir on backend:', e);
+    }
+  };
 
   // Class-wise viewer state
   const [selectedClass, setSelectedClass] = useState<string>('Export');
@@ -96,6 +183,18 @@ export const FinalOutputStage: React.FC = () => {
             if (mounted && data && !data.error) {
               setExecutionResult(data);
               updateWorkflowField('outputs', { ...workflow.outputs, final_output: data });
+              if (data.eventJson || data.inputs) {
+                updateWorkflowField('finalOutputInputs', {
+                  ...workflow.finalOutputInputs,
+                  eventJson: data.eventJson || data.inputs?.eventJson || workflow.finalOutputInputs?.eventJson,
+                  schemaKey: data.schemaKey || data.inputs?.schemaKey || workflow.finalOutputInputs?.schemaKey,
+                  tenantId: data.tenantId || data.inputs?.tenantId || 'DM00005',
+                  process: data.process || data.inputs?.process || 'Compute_VR2',
+                  forPrdFrom: data.forPrdFrom || data.inputs?.forPrdFrom || '2025-04-01',
+                  forPrdTo: data.forPrdTo || data.inputs?.forPrdTo || '2026-03-31',
+                  eventFileName: data.inputs?.eventFile || 'Event.py'
+                });
+              }
               if (data.runStatus) setRunStatus(data.runStatus);
               setHasExecuted(true);
             }
@@ -110,6 +209,15 @@ export const FinalOutputStage: React.FC = () => {
   useEffect(() => {
     refreshStageStatus();
   }, [refreshStageStatus]);
+
+  // Auto-run trigger when coming from Schema Studio
+  useEffect(() => {
+    const autoRunTime = workflow.finalOutputInputs?.autoRunTriggeredAt;
+    if (autoRunTime && autoRunTime !== lastExecutedAutoRunRef.current) {
+      lastExecutedAutoRunRef.current = autoRunTime;
+      executeSchema(workflow.finalOutputInputs);
+    }
+  }, [workflow.finalOutputInputs?.autoRunTriggeredAt]);
 
   // Sync result from file store if result/final_output.json exists
   useEffect(() => {
@@ -148,6 +256,9 @@ export const FinalOutputStage: React.FC = () => {
       if (activeInputs?.eventJson) payload.eventJson = activeInputs.eventJson;
       if (activeInputs?.expectedOutput) payload.expectedOutput = activeInputs.expectedOutput;
       if (activeInputs?.schemaKey) payload.schemaKey = activeInputs.schemaKey;
+      if (activeInputs?.uploadSchema !== undefined) payload.uploadSchema = activeInputs.uploadSchema;
+      if (activeInputs?.confirmOverwrite !== undefined) payload.confirmOverwrite = activeInputs.confirmOverwrite;
+      if (caseDirInput || workflow.caseDir) payload.caseDir = caseDirInput || workflow.caseDir;
 
       const response = await fetch(`${API_URL}/execute-schema`, {
         method: 'POST',
@@ -219,6 +330,18 @@ export const FinalOutputStage: React.FC = () => {
       if (outputData && !outputData.error) {
         setExecutionResult(outputData);
         updateWorkflowField('outputs', { ...workflow.outputs, final_output: outputData });
+        if (outputData.eventJson || outputData.inputs) {
+          updateWorkflowField('finalOutputInputs', {
+            ...workflow.finalOutputInputs,
+            eventJson: outputData.eventJson || outputData.inputs?.eventJson || workflow.finalOutputInputs?.eventJson,
+            schemaKey: outputData.schemaKey || outputData.inputs?.schemaKey || workflow.finalOutputInputs?.schemaKey,
+            tenantId: outputData.tenantId || outputData.inputs?.tenantId || 'DM00005',
+            process: outputData.process || outputData.inputs?.process || 'Compute_VR2',
+            forPrdFrom: outputData.forPrdFrom || outputData.inputs?.forPrdFrom || '2025-04-01',
+            forPrdTo: outputData.forPrdTo || outputData.inputs?.forPrdTo || '2026-03-31',
+            eventFileName: outputData.inputs?.eventFile || 'Event.py'
+          });
+        }
 
         const rawReport = outputData.runReport || outputData.run_report || outputData.report || [];
         setSelectedClass('Export');
@@ -243,6 +366,7 @@ export const FinalOutputStage: React.FC = () => {
           runStatus: 'COMPLETED',
           generationStatus: 'completed'
         }));
+        loadInputs();
       }
 
     } catch (err: any) {
@@ -310,33 +434,57 @@ export const FinalOutputStage: React.FC = () => {
     const rawList =
       executionResult.runReport ||
       executionResult.run_report ||
+      executionResult.actualOutput?._RunReport ||
+      executionResult.output?._RunReport ||
       executionResult.report ||
+      executionResult.classes ||
       executionResult.schemaComparisons ||
       [];
 
     if (Array.isArray(rawList) && rawList.length > 0) {
       return rawList.map((item: any) => {
         const className =
-          item.class ||
+          item.SchemaName ||
+          item.schemaName ||
           item.className ||
+          item.class ||
           item.class_name ||
           item.schema ||
-          item.schemaName ||
           item.schema_name ||
           item.name ||
           'Unknown';
         
-        let status = (item.status || '').toUpperCase();
+        const rows = item.Rows ?? item.rows ?? item.rowCount ?? item.row_count ?? item.actualCount ?? item.actual ?? item.count ?? 0;
+        let status = (item.Status || item.status || '').toUpperCase();
         if (!status) {
-          status = (item.rows ?? item.rowCount ?? 0) > 0 ? 'OK' : 'EMPTY';
+          status = rows > 0 ? 'OK' : 'EMPTY';
         }
         if (status === 'PASS' || status === 'MATCH') status = 'OK';
         if (status === 'FAIL') status = 'FAILED';
 
-        const rows = item.rows ?? item.rowCount ?? item.row_count ?? item.actualCount ?? item.actual ?? item.count ?? 0;
-        const notes = item.notes || item.notes_error || item.notesError || item.error || item.message || '';
-        return { className, status, rows, notes };
+        const notes = item.Notes || item.notes || item.Error || item.error || item.notes_error || item.notesError || item.message || '';
+        const dataSource = item.DataSource || item.dataSource || item.datasource || '';
+        return { className, schemaName: className, status, rows, notes, dataSource };
       });
+    }
+
+    // Fallback directly from actualOutput keys
+    const actualObj = executionResult.actualOutput || executionResult.output;
+    if (actualObj && typeof actualObj === 'object') {
+      const entries = Object.entries(actualObj).filter(([k]) => !k.startsWith('_'));
+      if (entries.length > 0) {
+        return entries.map(([name, val]: [string, any]) => {
+          const rows = Array.isArray(val) ? val.length : 0;
+          return {
+            className: name,
+            schemaName: name,
+            status: rows > 0 ? 'OK' : 'EMPTY',
+            rows,
+            notes: '',
+            dataSource: ''
+          };
+        });
+      }
     }
 
     if (executionResult.comparison?.schemas) {
@@ -347,9 +495,11 @@ export const FinalOutputStage: React.FC = () => {
         else if (rows === 0) status = 'EMPTY';
         return {
           className: name,
+          schemaName: name,
           status,
           rows,
-          notes: data.status || ''
+          notes: data.status || '',
+          dataSource: ''
         };
       });
     }
@@ -392,6 +542,7 @@ export const FinalOutputStage: React.FC = () => {
       if (clsName === 'ALL' || clsName === 'Export') {
         const all: any[] = [];
         Object.entries(data).forEach(([key, val]) => {
+          if (key === '_RunReport') return;
           if (Array.isArray(val)) {
             val.forEach(item => {
               if (typeof item === 'object' && item !== null && !item.schemaname && !item.schema && !item.className) {
@@ -404,7 +555,10 @@ export const FinalOutputStage: React.FC = () => {
         });
         return all;
       }
-      return Array.isArray(data[clsName]) ? data[clsName] : [];
+      if (Array.isArray(data[clsName])) return data[clsName];
+      const matchKey = Object.keys(data).find(k => k.toLowerCase() === clsName.toLowerCase());
+      if (matchKey && Array.isArray(data[matchKey])) return data[matchKey];
+      return [];
     }
 
     if (Array.isArray(data)) {
@@ -426,8 +580,44 @@ export const FinalOutputStage: React.FC = () => {
     return [];
   };
 
-  // 5. Select a class: loads GET /api/runs/{runId}/final-output/class/{schemaName}
+  // Handler to select and load an input table from SchemaControlledDataProcess/input
+  const handleSelectInputSource = async (sourceName: string) => {
+    setActiveTableType('input');
+    setSelectedInputSource(sourceName);
+    setPage(1);
+
+    if (inputDataCache[sourceName]) {
+      viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+
+    try {
+      setIsLoadingInputData(true);
+      const res = await fetch(`${API_URL}/runs/${workflow.runId || 'default'}/final-output/input-data/${encodeURIComponent(sourceName)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInputDataCache(prev => ({
+          ...prev,
+          [sourceName]: {
+            columns: data.columns || [],
+            rows: data.rows || [],
+            totalRows: data.totalRows || (data.rows ? data.rows.length : 0),
+          }
+        }));
+      } else {
+        showToast(`Could not load input data for ${sourceName}`, 'error');
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch input data for ${sourceName}:`, e);
+    } finally {
+      setIsLoadingInputData(false);
+      viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+    // 5. Select a class: loads GET /api/runs/{runId}/final-output/class/{schemaName}
   const handleSelectClass = async (clsName: string) => {
+    setActiveTableType('output');
     setSelectedClass(clsName);
     setPage(1);
 
@@ -476,6 +666,14 @@ export const FinalOutputStage: React.FC = () => {
     return currentClassExpectedRecords;
   }, [resultViewerTab, currentClassActualRecords, currentClassExpectedRecords]);
 
+  // Unified active records (switching between output class records and input table records)
+  const activeRecords = useMemo(() => {
+    if (activeTableType === 'input') {
+      return inputDataCache[selectedInputSource]?.rows || [];
+    }
+    return currentClassRecords;
+  }, [activeTableType, selectedInputSource, inputDataCache, currentClassRecords]);
+
   // Differences
   const allDiffs = useMemo(() => {
     if (Array.isArray(executionResult?.comparison?.diffs)) return executionResult.comparison.diffs;
@@ -495,14 +693,14 @@ export const FinalOutputStage: React.FC = () => {
 
   // Filtered records by search query
   const filteredRecords = useMemo(() => {
-    if (!Array.isArray(currentClassRecords)) return [];
-    if (!searchQuery.trim()) return currentClassRecords;
+    if (!Array.isArray(activeRecords)) return [];
+    if (!searchQuery.trim()) return activeRecords;
     const q = searchQuery.toLowerCase().trim();
-    return currentClassRecords.filter((rec: any) => {
+    return activeRecords.filter((rec: any) => {
       if (typeof rec !== 'object' || rec === null) return String(rec).toLowerCase().includes(q);
       return Object.values(rec).some(v => String(v).toLowerCase().includes(q));
     });
-  }, [currentClassRecords, searchQuery]);
+  }, [activeRecords, searchQuery]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
@@ -513,6 +711,16 @@ export const FinalOutputStage: React.FC = () => {
 
   // Columns for table view
   const tableColumns = useMemo(() => {
+    if (activeTableType === 'input') {
+      if (inputDataCache[selectedInputSource]?.columns?.length) {
+        return inputDataCache[selectedInputSource].columns;
+      }
+      const recs = inputDataCache[selectedInputSource]?.rows || [];
+      if (recs.length > 0 && typeof recs[0] === 'object') {
+        return Object.keys(recs[0]);
+      }
+      return [];
+    }
     if (!Array.isArray(currentClassRecords) || currentClassRecords.length === 0) return [];
     const keys = new Set<string>();
     const priority = [
@@ -534,17 +742,21 @@ export const FinalOutputStage: React.FC = () => {
     });
     keys.forEach(k => cols.push(k));
     return cols;
-  }, [currentClassRecords]);
+  }, [activeTableType, selectedInputSource, inputDataCache, currentClassRecords]);
 
   const handleCopyClassOutput = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(currentClassRecords, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(activeRecords, null, 2));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch(e) {}
   };
 
   const handleDownloadClassOutput = () => {
+    if (activeTableType === 'input') {
+      window.open(`${API_URL}/runs/${workflow.runId || 'default'}/final-output/input-data/${encodeURIComponent(selectedInputSource)}/csv`, '_blank');
+      return;
+    }
     try {
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentClassRecords, null, 2));
       const downloadAnchor = document.createElement('a');
@@ -561,6 +773,46 @@ export const FinalOutputStage: React.FC = () => {
 
   const isOutputReady = stageStatus?.output?.ready ?? !!(workflow.schema || workflow.runId);
   const missingInputs = !isOutputReady ? 'Generated schema' : '';
+
+  const inputFilesList = useMemo(() => {
+    if (inputsData?.inputFiles && inputsData.inputFiles.length > 0) {
+      return inputsData.inputFiles;
+    }
+    if (inputs?.inputFiles && inputs.inputFiles.length > 0) {
+      return inputs.inputFiles;
+    }
+    return [];
+  }, [inputsData?.inputFiles, inputs?.inputFiles]);
+
+  const activeSources: Array<{ name: string; rows: number }> = useMemo(() => {
+    if (inputs?.eventJson?.SourceDataMap) {
+      const sdm = inputs.eventJson.SourceDataMap;
+      const list = Object.entries(sdm)
+        .filter(([k]) => k !== '#consolidate#' && !k.startsWith('__'))
+        .map(([k, v]: any) => ({
+          name: k,
+          rows: Array.isArray(v) ? v.length : typeof v === 'number' ? v : 0,
+        }));
+      if (list.length > 0) return list;
+    }
+    if (inputsData?.sources && inputsData.sources.length > 0) {
+      return inputsData.sources;
+    }
+    if (inputs?.sources && inputs.sources.length > 0) {
+      return inputs.sources;
+    }
+    return [];
+  }, [inputs?.eventJson?.SourceDataMap, inputsData?.sources, inputs?.sources]);
+  let expectedSummary = "None";
+  if (inputs?.expectedOutput) {
+     if (Array.isArray(inputs.expectedOutput)) {
+        expectedSummary = `${inputs.expectedOutput.length} Expected Records`;
+     } else if (inputs.expectedOutput._type === 'file') {
+        expectedSummary = `Attached File (${inputs.expectedOutput.name})`;
+     } else {
+        expectedSummary = "Custom JSON";
+     }
+  }
 
   if (!inputs && !hasExecuted && !executionResult) {
     return (
@@ -634,18 +886,6 @@ export const FinalOutputStage: React.FC = () => {
         />
       </div>
     );
-  }
-
-  const dsMap = inputs?.eventJson?.SourceDataMap || {};
-  let expectedSummary = "None";
-  if (inputs?.expectedOutput) {
-     if (Array.isArray(inputs.expectedOutput)) {
-        expectedSummary = `${inputs.expectedOutput.length} Expected Records`;
-     } else if (inputs.expectedOutput._type === 'file') {
-        expectedSummary = `Attached File (${inputs.expectedOutput.name})`;
-     } else {
-        expectedSummary = "Custom JSON";
-     }
   }
 
   return (
@@ -743,30 +983,93 @@ export const FinalOutputStage: React.FC = () => {
            </div>
            
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                 <div className="text-[10px] font-bold text-neutral-500 uppercase">Event JSON</div>
-                 <div className="flex items-center space-x-2 text-xs font-mono text-neutral-700 dark:text-neutral-300">
-                    <FileJson className="h-4 w-4 text-blue-500" />
-                    <span className="truncate">{inputs?.eventFileName || 'Pasted Event JSON'}</span>
+              <div className="space-y-3">
+                 <div>
+                   <div className="text-[10px] font-bold text-neutral-500 uppercase">Event JSON</div>
+                   <div className="flex items-center space-x-2 text-xs font-mono text-neutral-700 dark:text-neutral-300 pt-0.5">
+                      <FileJson className="h-4 w-4 text-blue-500 shrink-0" />
+                      <span className="truncate">{inputs?.eventFileName || inputsData?.eventFile || 'event_input.json'}</span>
+                   </div>
                  </div>
-                 {inputs?.eventJson?.TenantID && inputs?.eventJson?.Process && (
+                 {(inputs?.eventJson?.TenantID || inputsData?.tenantId) && (
                     <div className="flex gap-2">
-                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">Tenant: {inputs.eventJson.TenantID}</span>
-                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">Process: {inputs.eventJson.Process}</span>
+                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">
+                         Tenant: {inputs?.eventJson?.TenantID || inputsData?.tenantId}
+                       </span>
+                       <span className="px-1.5 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-[10px] font-semibold">
+                         Process: {inputs?.eventJson?.Process || inputsData?.process}
+                       </span>
                     </div>
                  )}
-                 <div className="flex flex-wrap gap-1.5 pt-1">
-                    {Object.entries(dsMap).map(([k,v]: any) => (
-                       <span key={k} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
-                         {k} {'\u00b7'} {v.length ? v.length : v}
-                       </span>
-                    ))}
-                 </div>
+                 {activeSources.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                       {activeSources.map((s: any) => (
+                          <span key={s.name} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 rounded-md text-[10px] font-bold">
+                            {s.name} - {s.rows}
+                          </span>
+                       ))}
+                    </div>
+                 )}
+
+                 {/* Generated Input Files from SchemaControlledDataProcess/input */}
+                 {inputFilesList.length > 0 && (
+                    <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 space-y-1.5">
+                       <div className="flex items-center justify-between">
+                          <div className="text-[10px] font-bold text-neutral-500 uppercase flex items-center space-x-1">
+                             <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                             <span>Generated Inputs (SchemaControlledDataProcess/input)</span>
+                          </div>
+                          <span className="text-[9px] font-mono text-neutral-400">
+                             {inputFilesList.length} {inputFilesList.length === 1 ? 'file' : 'files'}
+                          </span>
+                       </div>
+                       <div className="space-y-1">
+                          {inputFilesList.map((file: any) => (
+                             <div
+                                key={file.name}
+                                className="flex items-center justify-between p-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/70 dark:border-neutral-700/60 text-xs"
+                             >
+                                <div className="flex items-center space-x-2 truncate">
+                                   <span className="font-mono font-medium text-neutral-800 dark:text-neutral-200 truncate">
+                                      {file.name}
+                                   </span>
+                                   <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 rounded text-[9px] font-semibold">
+                                      {file.rows} rows
+                                   </span>
+                                   {file.size && (
+                                      <span className="text-[10px] font-mono text-neutral-400">
+                                         {file.size}
+                                      </span>
+                                   )}
+                                </div>
+                                <div className="flex items-center space-x-1 shrink-0">
+                                   <button
+                                      type="button"
+                                      onClick={() => handleSelectInputSource(file.source || file.name)}
+                                      className="inline-flex items-center space-x-1 px-2 py-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 rounded border border-blue-200 dark:border-blue-800/60 transition-colors cursor-pointer"
+                                   >
+                                      <Eye className="h-3 w-3" />
+                                      <span>Inspect</span>
+                                   </button>
+                                   <a
+                                      href={`${API_URL}/runs/${workflow.runId || 'default'}/final-output/input-data/${encodeURIComponent(file.source || file.name)}/csv`}
+                                      download
+                                      className="inline-flex items-center p-1 text-[10px] text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                                      title="Download input CSV"
+                                   >
+                                      <Download className="h-3 w-3" />
+                                   </a>
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                 )}
               </div>
 
               <div className="space-y-4">
                  <div className="space-y-1.5">
-                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Period (forPrdFrom \u2014 forPrdTo)</div>
+                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Period (forPrdFrom — forPrdTo)</div>
                     <div className="flex items-center space-x-2 text-xs">
                        <input
                          type="date"
@@ -780,6 +1083,19 @@ export const FinalOutputStage: React.FC = () => {
                          value={forPrdTo}
                          onChange={(e) => setForPrdTo(e.target.value)}
                          className="px-2 py-1 text-xs rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200"
+                       />
+                    </div>
+                 </div>
+                 <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold text-neutral-500 uppercase">Case Folder</div>
+                    <div className="flex items-center space-x-2">
+                       <input
+                         type="text"
+                         value={caseDirInput}
+                         onChange={(e) => handleCaseDirChange(e.target.value)}
+                         onBlur={handleCaseDirBlur}
+                         placeholder="e.g. One-liner to BO/cases/..."
+                         className="w-full px-2.5 py-1 text-xs font-mono rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-500 transition-colors"
                        />
                     </div>
                  </div>
@@ -827,10 +1143,11 @@ export const FinalOutputStage: React.FC = () => {
           </div>
         )}
 
-        {/* Evaluation Result Area */}
-        {executionResult && !executionError && (
+        {/* Evaluation Result Area / Input Table Explorer */}
+        {(executionResult || (activeTableType === 'input' && selectedInputSource)) && !executionError && (
           <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-sm overflow-hidden flex flex-col transition-colors">
-            {/* Header / Banner */}
+            {/* Header / Banner (Only when executionResult exists) */}
+            {executionResult && (
             <div className={`px-5 py-4 border-b ${
                  (executionResult.evaluationResult?.toUpperCase() === 'PASS' || executionResult.status?.toUpperCase() === 'PASS' || executionResult.runStatus?.toUpperCase() === 'COMPLETED')
                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50'
@@ -857,6 +1174,7 @@ export const FinalOutputStage: React.FC = () => {
                  </div>
               )}
             </div>
+            )}
 
             <div className="p-5 space-y-6">
               {/* 1. Run Report Table: columns Class, Status, Rows, Notes / Error */}
@@ -900,6 +1218,9 @@ export const FinalOutputStage: React.FC = () => {
                               <td className="p-3">
                                 <div className="flex items-center space-x-2">
                                   <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">{row.className}</span>
+                          {row.dataSource && (
+                            <span className="text-[10px] text-neutral-400 font-normal">({row.dataSource})</span>
+                          )}
                                   {isSelected && (
                                     <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 rounded text-[9px] font-bold">
                                       Active
@@ -922,7 +1243,9 @@ export const FinalOutputStage: React.FC = () => {
                                 {Number(row.rows).toLocaleString()}
                               </td>
                               <td className="p-3 text-xs text-neutral-600 dark:text-neutral-400 truncate max-w-xs font-mono" title={row.notes}>
-                                {row.notes || '-'}
+                        <div className="max-w-md truncate">
+                          {row.notes || (isOk ? (row.dataSource ? `Generated from ${row.dataSource}` : 'Execution passed') : '-')}
+                        </div>
                               </td>
                               <td className="p-3 text-center">
                                 <button
@@ -994,10 +1317,14 @@ export const FinalOutputStage: React.FC = () => {
                     <Database className="h-4 w-4 text-neutral-700 dark:text-neutral-300" />
                     <div>
                       <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
-                        Output Table {selectedClass ? `(${selectedClass})` : ''}
+                        {activeTableType === 'input'
+                          ? `Input Table (${selectedInputSource})`
+                          : `Output Table ${selectedClass ? `(${selectedClass})` : ''}`}
                       </h4>
                       <p className="text-[10px] text-neutral-500">
-                        Filter and inspect records in table or raw JSON format
+                        {activeTableType === 'input'
+                          ? `Records fetched from SchemaControlledDataProcess/input for ${selectedInputSource}`
+                          : 'Filter and inspect records in table or raw JSON format'}
                       </p>
                     </div>
                   </div>
@@ -1014,7 +1341,7 @@ export const FinalOutputStage: React.FC = () => {
                     type="button"
                     onClick={() => handleSelectClass('Export')}
                     className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
-                      selectedClass === 'Export'
+                      activeTableType === 'output' && selectedClass === 'Export'
                         ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-500/20'
                         : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700/80 border border-neutral-200 dark:border-neutral-700'
                     }`}
@@ -1033,7 +1360,7 @@ export const FinalOutputStage: React.FC = () => {
                   {availableClasses.map((clsName) => {
                     const repItem = runReport.find(r => r.className.toLowerCase() === clsName.toLowerCase());
                     const count = repItem?.rows ?? 0;
-                    const isSelected = selectedClass === clsName;
+                    const isSelected = activeTableType === 'output' && selectedClass === clsName;
 
                     return (
                       <button
@@ -1060,6 +1387,33 @@ export const FinalOutputStage: React.FC = () => {
                       </button>
                     );
                   })}
+
+                  {/* Generated Input Pills */}
+                  {inputFilesList.map((file: any) => {
+                    const sName = file.source || file.name;
+                    const isSelected = activeTableType === 'input' && selectedInputSource === sName;
+                    return (
+                      <button
+                        key={file.name}
+                        type="button"
+                        onClick={() => handleSelectInputSource(sName)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/20'
+                            : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800/60'
+                        }`}
+                      >
+                        <span className="font-mono">Input: {sName}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          isSelected
+                            ? 'bg-emerald-700 text-white'
+                            : 'bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200'
+                        }`}>
+                          {file.rows}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Explorer Viewer Container */}
@@ -1077,9 +1431,15 @@ export const FinalOutputStage: React.FC = () => {
                             : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200'
                         }`}
                       >
-                        <span>{selectedClass === 'Export' ? 'Export Rows' : `${selectedClass} Output`}</span>
+                        <span>
+                          {activeTableType === 'input'
+                            ? `Input: ${selectedInputSource}`
+                            : selectedClass === 'Export'
+                            ? 'Export Rows'
+                            : `${selectedClass} Output`}
+                        </span>
                         <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
-                          {currentClassActualRecords.length}
+                          {activeRecords.length}
                         </span>
                       </button>
 

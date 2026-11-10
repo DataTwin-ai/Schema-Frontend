@@ -109,13 +109,20 @@ export interface SchemaGenerationWorkflow {
   additionalInformation: AdditionalInformation[];
   additionalRequirements?: AdditionalRequirement[];
   finalOutputInputs?: {
-    eventJson: any;
-    expectedOutput: any;
-    schemaKey: string;
-    uploadSchema: boolean;
+    eventJson?: any;
+    expectedOutput?: any;
+    schemaKey?: string;
+    uploadSchema?: boolean;
     eventFileName?: string;
     expectedFileName?: string;
     confirmOverwrite?: boolean;
+    autoRunTriggeredAt?: number;
+    tenantId?: string;
+    process?: string;
+    forPrdFrom?: string;
+    forPrdTo?: string;
+    inputFiles?: Array<any>;
+    sources?: Array<any>;
   };
   generationStatus: GenerationStatus;
   currentProgressSteps: GenerationProgressStep[];
